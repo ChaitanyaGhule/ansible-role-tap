@@ -1,0 +1,10 @@
+---
+# handlers file for nespresso_ansible_role_tap
+
+- name: Restart Supervisor
+  ansible.builtin.service:
+    name: supervisord
+    state: restarted
+  become: true
+  ignore_errors: true
+  failed_when: false
