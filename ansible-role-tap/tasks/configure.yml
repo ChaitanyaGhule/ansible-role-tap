@@ -54,6 +54,10 @@
     timeout 300 git clone --depth 1 -b {{ tap_git_branch }} {{ tap_backend_repo_url }} {{ tap_backend_clone_path }}_{{ market }}
   become: true
   changed_when: true
+  failed_when: false
+  environment:
+    GIT_USERNAME: "{{ vault_bitbucket_username | default(ansible_user) }}"
+    GIT_PASSWORD: "{{ vault_bitbucket_password | default('') }}"
 
 #########################################
 # PHP & Composer Prereqs
@@ -117,11 +121,19 @@
   ansible.builtin.shell: |
     cd /mnt/v2-markets/prod_{{ market }}/server/production
     export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+    # Try with credentials in URL if username/password provided
+    if [ -n "$GIT_USERNAME" ] && [ -n "$GIT_PASSWORD" ]; then
+      git_url=$(echo {{ tap_backend_repo_url }} | sed "s|https://|https://$GIT_USERNAME:$GIT_PASSWORD@|")
+      git remote set-url origin "$git_url"
+    fi
     git pull --no-edit origin {{ tap_git_branch }} || git fetch origin {{ tap_git_branch }} && git reset --hard origin/{{ tap_git_branch }}
     echo "Backend git pull completed: $(date)"
   become: true
   changed_when: true
   failed_when: false
+  environment:
+    GIT_USERNAME: "{{ vault_bitbucket_username | default('') }}"
+    GIT_PASSWORD: "{{ vault_bitbucket_password | default('') }}"
 
 - name: Check if backend source exists (fallback)
   ansible.builtin.stat:
@@ -271,11 +283,19 @@
   ansible.builtin.shell: |
     cd /mnt/www/prod_{{ market }}/nespresso_ev2-client
     export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+    # Try with credentials in URL if username/password provided
+    if [ -n "$GIT_USERNAME" ] && [ -n "$GIT_PASSWORD" ]; then
+      git_url=$(echo {{ tap_frontend_repo_url }} | sed "s|https://|https://$GIT_USERNAME:$GIT_PASSWORD@|")
+      git remote set-url origin "$git_url"
+    fi
     git pull --no-edit origin {{ tap_git_branch }} || git fetch origin {{ tap_git_branch }} && git reset --hard origin/{{ tap_git_branch }}
     echo "Frontend git pull completed: $(date)"
   become: true
   changed_when: true
   failed_when: false
+  environment:
+    GIT_USERNAME: "{{ vault_bitbucket_username | default('') }}"
+    GIT_PASSWORD: "{{ vault_bitbucket_password | default('') }}"
 
 - name: Check if frontend source exists (fallback)
   ansible.builtin.stat:
