@@ -1,375 +1,445 @@
 #########################################
-# System Prerequisites Check
-#########################################
-- name: Check disk space
-  ansible.builtin.command: df -h /
-  register: disk_check
-  changed_when: false
-
-- name: Aggressive disk cleanup
-  ansible.builtin.shell: |
-    yum clean all
-    rm -rf /tmp/* /var/tmp/* /var/cache/*
-    journalctl --vacuum-time=1h
-    find /var/log -name "*.log" -mtime +1 -delete
-    find /var/log -name "*.gz" -delete
-    find /var/log -name "*.old" -delete
-    find /root -name "*.log" -delete
-    find /home -name "*.log" -delete 2>/dev/null || true
-    rm -rf /var/cache/yum/*
-    package-cleanup --oldkernels --count=1 -y 2>/dev/null || true
-  become: true
-  when: "'9' in disk_check.stdout.split('%')[0][-2:] or '100%' in disk_check.stdout"
-  failed_when: false
-  changed_when: true
-
-- name: Check disk space after cleanup
-  ansible.builtin.command: df -h /
-  register: disk_check_after
-  changed_when: false
-
-- name: Show disk space status
-  ansible.builtin.debug:
-    msg: "Disk space: {{ disk_check_after.stdout_lines[1] }}"
-
-#########################################
 # Git Prerequisites & Code Pull
 #########################################
-- name: Install Git
-  ansible.builtin.yum:
-    name: git
-    state: present
-  become: true
+- name: configure | Install Git package
+  ansible.builtin.yum:
+    name: git
+    state: present
+  become: true
 
-- name: Remove existing clone directory if exists
-  ansible.builtin.file:
-    path: "{{ tap_backend_clone_path }}_{{ market }}"
-    state: absent
-  become: true
+- name: configure | Remove existing clone directory if exists
+  ansible.builtin.file:
+    path: "{{ tap_git_clone_path }}"
+    state: absent
+  become: true
 
-- name: Clone repository from Bitbucket (shallow)
-  ansible.builtin.shell: |
-    export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-    timeout 300 git clone --depth 1 -b {{ tap_git_branch }} {{ tap_backend_repo_url }} {{ tap_backend_clone_path }}_{{ market }}
-  become: true
-  changed_when: true
+- name: configure | Clone repository from Bitbucket
+  ansible.builtin.git:
+    repo: "{{ tap_git_repo_url }}"
+    dest: "{{ tap_git_clone_path }}"
+    version: "{{ tap_git_branch }}"
+    force: true
+  become: true
+  register: tap_git_clone_result
+  failed_when: false
+  timeout: 60
 
 #########################################
-# PHP & Composer Prereqs
+# System Prerequisites Check
 #########################################
-- name: Install PHP and required packages (offline)
-  ansible.builtin.yum:
-    name:
-      - php
-      - php-cli
-      - php-common
-      - php-mbstring
-      - php-xml
-      - php-mysqlnd
-      - php-bcmath
-      - php-pdo
-      - php-opcache
-      - php-zip
-      - unzip
-      - curl
-    state: present
-  become: true
+- name: configure | Get system disk information
+  ansible.builtin.setup:
+    filter: ansible_mounts
+  register: tap_disk_info
+
+- name: configure | Calculate available disk space
+  ansible.builtin.set_fact:
+    tap_available_space_gb: "{{ (ansible_mounts | selectattr('mount', 'equalto', '/') | first).size_available / 1024 / 1024 / 1024 }}"
+    tap_disk_usage_percent: "{{ ((ansible_mounts | selectattr('mount', 'equalto', '/') | first).size_total - (ansible_mounts | selectattr('mount', 'equalto', '/') | first).size_available) * 100 / (ansible_mounts | selectattr('mount', 'equalto', '/') | first).size_total }}"
+
+- name: configure | Clean YUM cache when disk usage high
+  ansible.builtin.yum:
+    name: '*'
+    state: present
+    update_cache: true
+    clean: true
+  become: true
+  when: tap_disk_usage_percent | float > 85
+  failed_when: false
+
+- name: configure | Find temporary files for cleanup
+  ansible.builtin.find:
+    paths:
+      - /tmp
+      - /var/tmp
+      - /var/cache
+    patterns: "*"
+    file_type: any
+    age: 1d
+  register: tap_temp_files
+  become: true
+  when: tap_disk_usage_percent | float > 85
+  failed_when: false
+
+- name: configure | Remove old temporary files
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ tap_temp_files.files | default([]) }}"
+  become: true
+  when: tap_disk_usage_percent | float > 85
+  failed_when: false
+
+- name: configure | Display disk space status
+  ansible.builtin.debug:
+    msg: "Available disk space: {{ tap_available_space_gb | float | round(2) }}GB ({{ tap_disk_usage_percent | float | round(1) }}% used)"
 
 #########################################
 # Ensure Directory Structure
 #########################################
-- name: Ensure BackOffice directory exists
-  ansible.builtin.file:
-    path: "/mnt/v2-markets/prod_{{ market }}/server/production"
-    state: directory
-    mode: '0755'
-    recurse: true
-  become: true
+- name: configure | Ensure BackOffice directory exists for {{ market }}
+  ansible.builtin.file:
+    path: "/mnt/v2-markets/prod_{{ market }}/server/production"
+    state: directory
+    mode: '0755'
+    recurse: true
+  become: true
 
-- name: Ensure Frontend directory exists
-  ansible.builtin.file:
-    path: "/mnt/www/prod_{{ market }}/nespresso_ev2-client"
-    state: directory
-    mode: '0755'
-    recurse: true
-  become: true
+- name: configure | Ensure Frontend directory exists for {{ market }}
+  ansible.builtin.file:
+    path: "/mnt/www/prod_{{ market }}/nespresso_ev2-client"
+    state: directory
+    mode: '0755'
+    recurse: true
+  become: true
 
 #########################################
-# Backend Deployment (Git Pull + Copy)
+# Copy Backend Code
 #########################################
-- name: Check if backend deployment already exists
-  ansible.builtin.stat:
-    path: "/mnt/v2-markets/prod_{{ market }}/server/production/.git"
-  register: backend_git_exists
+- name: configure | Determine backend source path for {{ market }}
+  ansible.builtin.set_fact:
+    tap_actual_backend_path: "{{ tap_backend_fallback_path if (tap_git_clone_result is defined and tap_git_clone_result.failed) else tap_backend_source_path }}"
 
-- name: Initialize backend git repository if not exists
-  ansible.builtin.shell: |
-    cd /mnt/v2-markets/prod_{{ market }}/server/production
-    git init
-    git remote add origin {{ tap_backend_repo_url }}
-  become: true
-  when: not backend_git_exists.stat.exists
-  changed_when: true
-  failed_when: false
+- name: configure | Check if backend source directory exists for {{ market }}
+  ansible.builtin.stat:
+    path: "{{ tap_actual_backend_path }}"
+  register: tap_backend_source_stat
 
-- name: Git pull latest backend code (always execute)
-  ansible.builtin.shell: |
-    cd /mnt/v2-markets/prod_{{ market }}/server/production
-    export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-    git pull --no-edit origin {{ tap_git_branch }} || git fetch origin {{ tap_git_branch }} && git reset --hard origin/{{ tap_git_branch }}
-    echo "Backend git pull completed: $(date)"
-  become: true
-  changed_when: true
-  failed_when: false
+- name: configure | Check if backend deployment already exists for {{ market }}
+  ansible.builtin.stat:
+    path: "/v2-markets/prod_{{ market }}/server/production/.git"
+  register: tap_backend_git_exists
 
-- name: Check if backend source exists (fallback)
-  ansible.builtin.stat:
-    path: "{{ tap_backend_source_path }}"
-  register: backend_dir
+- name: configure | Git pull latest code for backend deployment {{ market }}
+  ansible.builtin.git:
+    repo: "{{ tap_backend_repo_url }}"
+    dest: "{{ tap_git_clone_path }}_backend_{{ market }}"
+    version: "{{ tap_app_git_branch }}"
+    force: true
+  become: true
+  when: tap_backend_git_exists.stat.exists and tap_git_pull_enabled | bool
+  register: tap_backend_git_pull
+  failed_when: false
 
-- name: Copy backend code from source (fallback if git fails)
-  ansible.builtin.shell: |
-    echo "Backend copy started: $(date)"
-    timeout 300 cp -r {{ tap_backend_source_path }}/* /mnt/v2-markets/prod_{{ market }}/server/production/
-    echo "Backend copy completed: $(date)"
-  become: true
-  when: backend_dir.stat.exists
-  changed_when: true
+- name: configure | Copy updated backend code for {{ market }}
+  ansible.builtin.copy:
+    src: "{{ tap_git_clone_path }}_backend_{{ market }}/nespresso-test/new_infra_tap_source/back/nespresso_ev2-server-rc-mobile_php81/"
+    dest: "/v2-markets/prod_{{ market }}/server/production/"
+    remote_src: true
+    mode: preserve
+  become: true
+  when: tap_backend_git_pull is defined and not tap_backend_git_pull.skipped and not (tap_backend_git_pull.failed | default(false))
+  register: tap_backend_update_copy
+
+- name: configure | Copy backend code (new deployment) for {{ market }}
+  ansible.builtin.copy:
+    src: "{{ tap_actual_backend_path }}/"
+    dest: "/v2-markets/prod_{{ market }}/server/production/"
+    remote_src: true
+    mode: preserve
+  become: true
+  when: tap_backend_source_stat.stat.exists and not tap_backend_git_exists.stat.exists
+  register: tap_backend_copy_result
+
+- name: configure | Create minimal backend structure if source missing for {{ market }}
+  ansible.builtin.file:
+    path: "/mnt/v2-markets/prod_{{ market }}/server/production/composer.json"
+    state: touch
+    mode: '0644'
+  become: true
+  when: not tap_backend_source_stat.stat.exists
 
 #########################################
 # Laravel Setup: Composer + Artisan
 #########################################
-- name: Check if composer.lock exists
-  ansible.builtin.stat:
-    path: "/mnt/v2-markets/prod_{{ market }}/server/production/composer.lock"
-  register: composer_lock
+- name: configure | Check if composer.lock exists for {{ market }}
+  ansible.builtin.stat:
+    path: "/v2-markets/prod_{{ market }}/server/production/composer.lock"
+  register: tap_composer_lock
 
-- name: Create minimal composer.json if missing
-  ansible.builtin.copy:
-    content: |
-      {
-          "require": {
-              "php": ">=7.4",
-              "laravel/framework": "^8.0"
-          },
-          "autoload": {
-              "psr-4": {
-                  "App\\": "app/"
-              }
-          }
-      }
-    dest: "/mnt/v2-markets/prod_{{ market }}/server/production/composer.json"
-    mode: '0644'
-  become: true
-  when: not composer_lock.stat.exists
-  changed_when: true
+- name: configure | Run Composer install for {{ market }}
+  community.general.composer:
+    command: install
+    working_dir: "/v2-markets/prod_{{ market }}/server/production"
+    no_dev: true
+    no_scripts: true
+    prefer_dist: true
+    ignore_platform_reqs: true
+  become: true
+  when: tap_composer_lock.stat.exists
+  register: tap_composer_install_result
+  failed_when: false
+  async: 300
+  poll: 10
 
-- name: Run Composer install (always execute if lock exists)
-  ansible.builtin.shell: |
-    timeout 300 php composer.phar install --no-dev --no-scripts --prefer-dist --no-interaction --ignore-platform-reqs || echo "Composer timeout, continuing"
-  args:
-    chdir: "/mnt/v2-markets/prod_{{ market }}/server/production"
-  become: true
-  when: composer_lock.stat.exists
-  register: composer_install_result
-  failed_when: false
-  changed_when: true
-  retries: 2
-  delay: 30
-
-- name: Run Composer update (always execute)
-  ansible.builtin.shell: |
-    echo "Composer update started: $(date)"
-    timeout 900 php composer.phar update --no-dev --optimize-autoloader --prefer-dist --no-interaction || timeout 900 composer update --no-dev --optimize-autoloader --prefer-dist --no-interaction
-    echo "Composer update completed: $(date)"
-    ls -la vendor/ || echo "Vendor directory not created"
-  args:
-    chdir: "/mnt/v2-markets/prod_{{ market }}/server/production"
-  become: true
-  register: composer_update_result
-  changed_when: true
-  failed_when: false
-
-- name: Verify vendor directory exists
-  ansible.builtin.stat:
-    path: "/mnt/v2-markets/prod_{{ market }}/server/production/vendor/autoload.php"
-  register: autoload_check
-
-- name: Show composer results for debugging
-  ansible.builtin.debug:
-    msg: "Autoload exists: {{ autoload_check.stat.exists }}"
-
-- name: Check if Laravel framework is installed
-  ansible.builtin.stat:
-    path: "/mnt/v2-markets/prod_{{ market }}/server/production/vendor/laravel/framework/src/Illuminate/Foundation/Application.php"
-  register: laravel_check
-
-- name: Clear and cache Laravel config, views, and routes (always execute)
-  ansible.builtin.shell: |
-    php artisan cache:clear || echo "Cache clear failed"
-    php artisan config:cache || echo "Config cache failed"
-    php artisan view:clear || echo "View clear failed"
-    php artisan view:cache || echo "View cache failed"
-    php artisan route:clear || echo "Route clear failed"
-  args:
-    chdir: "/mnt/v2-markets/prod_{{ market }}/server/production"
-    executable: /bin/bash
-  become: true
-  changed_when: true
-  failed_when: false
-
-- name: Notify release via artisan (always execute)
-  ansible.builtin.shell: php artisan release_notification:notify --force || echo "Release notification failed"
-  args:
-    chdir: "/mnt/v2-markets/prod_{{ market }}/server/production"
-    executable: /bin/bash
-  become: true
-  register: artisan_notify_result
-  failed_when: false
-  changed_when: true
-  notify: Restart Supervisor
-
-- name: Sync translations (always execute if file provided)
-  ansible.builtin.shell: php artisan sync:translations --filename={{ tap_translation_file }} || echo "Translation sync failed"
-  when: tap_translation_sync_enabled | default(true)
-  args:
-    chdir: "/mnt/v2-markets/prod_{{ market }}/server/production"
-    executable: /bin/bash
-  become: true
-  register: sync_translations_result
-  failed_when: false
-  changed_when: true
+- name: configure | Run Composer update (matching manual script) for {{ market }}
+  community.general.composer:
+    command: update
+    working_dir: "/v2-markets/prod_{{ market }}/server/production"
+    no_dev: false
+    optimize_autoloader: true
+    prefer_dist: true
+  become: true
+  when: not tap_composer_lock.stat.exists or tap_backend_git_pull is defined
+  register: tap_composer_update_result
+  failed_when: false
+  async: 900
+  poll: 30
 
 #########################################
-# Frontend Deployment (Git Pull + Copy)
+# Laravel Artisan Commands (from manual script)
 #########################################
-- name: Check if frontend deployment already exists
-  ansible.builtin.stat:
-    path: "/mnt/www/prod_{{ market }}/nespresso_ev2-client/.git"
-  register: frontend_git_exists
+- name: configure | Clear Laravel cache for {{ market }}
+  ansible.builtin.shell: php artisan cache:clear
+  args:
+    chdir: "/v2-markets/prod_{{ market }}/server/production"
+    executable: /bin/bash
+  become: true
+  register: tap_artisan_cache_clear
+  failed_when: false
+  changed_when: true
+  # Using shell because there's no dedicated ansible module for Laravel Artisan commands
 
-- name: Initialize frontend git repository if not exists
-  ansible.builtin.shell: |
-    cd /mnt/www/prod_{{ market }}/nespresso_ev2-client
-    git init
-    git remote add origin {{ tap_frontend_repo_url }}
-  become: true
-  when: not frontend_git_exists.stat.exists
-  changed_when: true
-  failed_when: false
+- name: configure | Cache Laravel config for {{ market }}
+  ansible.builtin.shell: php artisan config:cache
+  args:
+    chdir: "/v2-markets/prod_{{ market }}/server/production"
+    executable: /bin/bash
+  become: true
+  register: tap_artisan_config_cache
+  failed_when: false
+  changed_when: true
+  # Using shell because there's no dedicated ansible module for Laravel Artisan commands
 
-- name: Git stash frontend changes (always execute)
-  ansible.builtin.shell: |
-    cd /mnt/www/prod_{{ market }}/nespresso_ev2-client
-    git stash || echo "Nothing to stash"
-  become: true
-  changed_when: true
-  failed_when: false
+- name: configure | Clear and cache Laravel views for {{ market }}
+  ansible.builtin.shell: |
+    php artisan view:clear
+    php artisan view:cache
+  args:
+    chdir: "/v2-markets/prod_{{ market }}/server/production"
+    executable: /bin/bash
+  become: true
+  register: tap_artisan_view_cache
+  failed_when: false
+  changed_when: true
+  # Using shell because there's no dedicated ansible module for Laravel Artisan commands
 
-- name: Git pull latest frontend code (always execute)
-  ansible.builtin.shell: |
-    cd /mnt/www/prod_{{ market }}/nespresso_ev2-client
-    export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-    git pull --no-edit origin {{ tap_git_branch }} || git fetch origin {{ tap_git_branch }} && git reset --hard origin/{{ tap_git_branch }}
-    echo "Frontend git pull completed: $(date)"
-  become: true
-  changed_when: true
-  failed_when: false
+- name: configure | Clear Laravel routes for {{ market }}
+  ansible.builtin.shell: php artisan route:clear
+  args:
+    chdir: "/v2-markets/prod_{{ market }}/server/production"
+    executable: /bin/bash
+  become: true
+  register: tap_artisan_route_clear
+  failed_when: false
+  changed_when: true
+  # Using shell because there's no dedicated ansible module for Laravel Artisan commands
 
-- name: Check if frontend source exists (fallback)
-  ansible.builtin.stat:
-    path: "{{ tap_frontend_source_path }}"
-  register: frontend_dir
+- name: configure | Restart Supervisor for {{ market }}
+  community.general.supervisorctl:
+    name: "prod_{{ market }}"
+    state: restarted
+  become: true
+  register: tap_supervisor_result
+  failed_when: false
 
-- name: Copy frontend code from source (fallback if git fails)
-  ansible.builtin.shell: |
-    echo "Frontend copy started: $(date)"
-    timeout 300 cp -r {{ tap_frontend_source_path }}/* /mnt/www/prod_{{ market }}/nespresso_ev2-client/
-    echo "Frontend copy completed: $(date)"
-  become: true
-  when: frontend_dir.stat.exists
-  changed_when: true
+- name: configure | Notify release via artisan for {{ market }}
+  ansible.builtin.shell: php artisan release_notification:notify --force
+  args:
+    chdir: "/v2-markets/prod_{{ market }}/server/production"
+    executable: /bin/bash
+  become: true
+  register: tap_artisan_notify_result
+  failed_when: false
+  changed_when: true
+  # Using shell because there's no dedicated ansible module for Laravel Artisan commands
+
+# Translation import is handled separately as per manual script structure
+
+- name: configure | Sync translations for {{ market }}
+  ansible.builtin.shell: php artisan sync:translations --filename={{ tap_translation_file }}
+  when: tap_translation_sync_enabled | bool and tap_translation_file is defined
+  args:
+    chdir: "/v2-markets/prod_{{ market }}/server/production"
+    executable: /bin/bash
+  become: true
+  register: tap_sync_translations_result
+  failed_when: false
+  changed_when: true
+  # Using shell because there's no dedicated ansible module for Laravel Artisan commands
+
+#########################################
+# Copy Frontend Code
+#########################################
+- name: configure | Check if frontend deployment already exists for {{ market }}
+  ansible.builtin.stat:
+    path: "/www/prod_{{ market }}/nespresso_ev2-client/.git"
+  register: tap_frontend_git_exists
+
+- name: configure | Git stash frontend changes for {{ market }}
+  ansible.builtin.command: git stash  # noqa: command-instead-of-module
+  args:
+    chdir: "/www/prod_{{ market }}/nespresso_ev2-client"
+  become: true
+  when: tap_frontend_git_exists.stat.exists and tap_git_stash_enabled | bool
+  register: tap_frontend_git_stash
+  failed_when: false
+  changed_when: true
+  # Using command because ansible.builtin.git module doesn't support stash operations
+
+- name: configure | Git pull latest code for frontend deployment {{ market }}
+  ansible.builtin.git:
+    repo: "{{ tap_frontend_repo_url }}"
+    dest: "{{ tap_git_clone_path }}_frontend_{{ market }}"
+    version: "{{ tap_app_git_branch }}"
+    force: true
+  become: true
+  when: tap_frontend_git_exists.stat.exists and tap_git_pull_enabled | bool
+  register: tap_frontend_git_pull
+  failed_when: false
+
+- name: configure | Copy updated frontend code for {{ market }}
+  ansible.builtin.copy:
+    src: "{{ tap_git_clone_path }}_frontend_{{ market }}/nespresso-test/new_infra_tap_source/front/nespresso_ev2-client-master/"
+    dest: "/www/prod_{{ market }}/nespresso_ev2-client/"
+    remote_src: true
+    mode: preserve
+  become: true
+  when: tap_frontend_git_pull is defined and not tap_frontend_git_pull.skipped and not (tap_frontend_git_pull.failed | default(false))
+  register: tap_frontend_update_copy
+
+- name: configure | Check if frontend source directory exists for {{ market }}
+  ansible.builtin.stat:
+    path: "{{ tap_frontend_source_path }}"
+  register: tap_frontend_source_stat
+
+- name: configure | Copy frontend code (new deployment) for {{ market }}
+  ansible.builtin.copy:
+    src: "{{ tap_frontend_source_path }}/"
+    dest: "/www/prod_{{ market }}/nespresso_ev2-client/"
+    remote_src: true
+    mode: preserve
+  become: true
+  when: tap_frontend_source_stat.stat.exists and not tap_frontend_git_exists.stat.exists
+  register: tap_frontend_copy_result
+
+- name: configure | Create minimal frontend structure if source missing for {{ market }}
+  ansible.builtin.file:
+    path: "/www/prod_{{ market }}/nespresso_ev2-client/dist/{{ tap_version }}"
+    state: directory
+    mode: '0755'
+    recurse: true
+  become: true
+  when: not tap_frontend_source_stat.stat.exists
 
 #########################################
 # Build Frontend (NPM)
 #########################################
-- name: Install Node.js and npm
-  ansible.builtin.yum:
-    name:
-      - nodejs
-      - npm
-    state: present
-  become: true
+- name: configure | Create npm cache directory for {{ market }}
+  ansible.builtin.file:
+    path: "/mnt/npm-cache-{{ market }}"
+    state: directory
+    mode: '0755'
+  become: true
 
-- name: Check disk space before NPM build
-  ansible.builtin.command: df -h
-  register: disk_status
-  changed_when: false
+- name: configure | Install npm dependencies (matching manual script) for {{ market }}
+  community.general.npm:
+    path: "/www/prod_{{ market }}/nespresso_ev2-client"
+    ci: "{{ not tap_use_npm_install | bool }}"
+    production: false
+  become: true
+  register: tap_npm_install_result
+  failed_when: false
+  async: 900
+  poll: 30
+  environment:
+    NODE_OPTIONS: "{{ tap_node_options }}"
 
-- name: Show disk usage
-  ansible.builtin.debug:
-    var: disk_status.stdout_lines
-
-- name: Log npm build start
-  ansible.builtin.debug:
-    msg: "Starting npm build for {{ market }} at {{ ansible_date_time.time }}"
-
-- name: Install npm dependencies (always execute)
-  ansible.builtin.shell: |
-    export NODE_OPTIONS={{ tap_node_options }}
-    timeout 600 npm ci --silent --no-audit --no-fund || { echo "npm ci failed, trying npm install"; timeout 600 npm install --silent --no-audit --no-fund; }
-  args:
-    chdir: "/mnt/www/prod_{{ market }}/nespresso_ev2-client"
-    executable: /bin/bash
-  become: true
-  register: npm_install_result
-  failed_when: false
-  changed_when: true
-  retries: 2
-  delay: 60
-
-- name: Build frontend (always execute)
-  ansible.builtin.shell: |
-    export NODE_OPTIONS={{ tap_node_options }}
-    timeout 600 npm run pub --silent
-  args:
-    chdir: "/mnt/www/prod_{{ market }}/nespresso_ev2-client"
-    executable: /bin/bash
-  become: true
-  register: npm_build_result
-  failed_when: false
-  changed_when: true
-  retries: 2
-  delay: 60
+- name: configure | Build frontend for {{ market }}
+  ansible.builtin.command: npm run pub
+  args:
+    chdir: "/www/prod_{{ market }}/nespresso_ev2-client"
+  become: true
+  register: tap_npm_build_result
+  failed_when: false
+  changed_when: true
+  async: 900
+  poll: 30
+  environment:
+    NODE_OPTIONS: "{{ tap_node_options }}"
+  # Using command because npm module doesn't support script parameter
 
 #########################################
 # Publish Frontend Version
 #########################################
-- name: Check if version directory exists
-  ansible.builtin.stat:
-    path: "/mnt/www/prod_{{ market }}/nespresso_ev2-client/dist/{{ tap_version }}"
-  register: version_dir
+- name: configure | Create version directory if missing for {{ market }}
+  ansible.builtin.file:
+    path: "/www/prod_{{ market }}/nespresso_ev2-client/dist/{{ tap_version }}"
+    state: directory
+    mode: '0755'
+  become: true
 
-- name: Create version directory if missing
-  ansible.builtin.file:
-    path: "/mnt/www/prod_{{ market }}/nespresso_ev2-client/dist/{{ tap_version }}"
-    state: directory
-    mode: '0755'
-  become: true
-  when: not version_dir.stat.exists
+- name: configure | Check if production symlink exists for {{ market }}
+  ansible.builtin.stat:
+    path: "/www/prod_{{ market }}/nespresso_ev2-client/dist/production"
+  register: tap_production_link_stat
 
-- name: Publish frontend version {{ tap_version }}
-  ansible.builtin.shell: |
-    cd /mnt/www/prod_{{ market }}/nespresso_ev2-client/dist
-    if [ -L "production" ]; then
-      rm production
-    elif [ -d "production" ]; then
-      echo "⚠️ 'production' is a real directory. Skipping deletion."
-      exit 1
-    fi
-    ln -s {{ tap_version }} production
-    ls -la production
-  args:
-    executable: /bin/bash
-  become: true
-  changed_when: true
+- name: configure | Remove existing production symlink (matching publish.sh) for {{ market }}
+  ansible.builtin.file:
+    path: "/www/prod_{{ market }}/nespresso_ev2-client/dist/production"
+    state: absent
+  become: true
+  when: tap_production_link_stat.stat.exists
+
+- name: configure | Create production symlink (matching publish.sh) for {{ market }}
+  ansible.builtin.file:
+    src: "{{ tap_version }}"
+    dest: "/www/prod_{{ market }}/nespresso_ev2-client/dist/production"
+    state: link
+  become: true
+  when: tap_version is defined
+
+#########################################
+# Cleanup
+#########################################
+- name: configure | Clean up npm cache for {{ market }}
+  ansible.builtin.file:
+    path: "/mnt/npm-cache-{{ market }}"
+    state: absent
+  become: true
+  failed_when: false
+
+- name: configure | Clean up temporary git clone directories for {{ market }}
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ tap_git_clone_path }}_backend_{{ market }}"
+    - "{{ tap_git_clone_path }}_frontend_{{ market }}"
+  become: true
+  failed_when: false
+
+- name: configure | Find ansible temporary files
+  ansible.builtin.find:
+    paths: /tmp
+    patterns: "ansible-*"
+    file_type: any
+  register: tap_ansible_temp_files
+  become: true
+  failed_when: false
+
+- name: configure | Remove ansible temporary files
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ tap_ansible_temp_files.files | default([]) }}"
+  become: true
+  failed_when: false
+
+- name: configure | Show deployment summary for {{ market }}
+  ansible.builtin.debug:
+    msg:
+      - "TAP deployment completed for market: {{ market }}"
+      - "Backend: /v2-markets/prod_{{ market }}/server/production/"
+      - "Frontend: /www/prod_{{ market }}/nespresso_ev2-client/dist/production/"
+      - "Version: {{ tap_version }}"
