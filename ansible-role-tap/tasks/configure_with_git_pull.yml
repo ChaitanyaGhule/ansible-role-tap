@@ -1,0 +1,375 @@
+#########################################
+# System Prerequisites Check
+#########################################
+- name: Check disk space
+  ansible.builtin.command: df -h /
+  register: disk_check
+  changed_when: false
+
+- name: Aggressive disk cleanup
+  ansible.builtin.shell: |
+    yum clean all
+    rm -rf /tmp/* /var/tmp/* /var/cache/*
+    journalctl --vacuum-time=1h
+    find /var/log -name "*.log" -mtime +1 -delete
+    find /var/log -name "*.gz" -delete
+    find /var/log -name "*.old" -delete
+    find /root -name "*.log" -delete
+    find /home -name "*.log" -delete 2>/dev/null || true
+    rm -rf /var/cache/yum/*
+    package-cleanup --oldkernels --count=1 -y 2>/dev/null || true
+  become: true
+  when: "'9' in disk_check.stdout.split('%')[0][-2:] or '100%' in disk_check.stdout"
+  failed_when: false
+  changed_when: true
+
+- name: Check disk space after cleanup
+  ansible.builtin.command: df -h /
+  register: disk_check_after
+  changed_when: false
+
+- name: Show disk space status
+  ansible.builtin.debug:
+    msg: "Disk space: {{ disk_check_after.stdout_lines[1] }}"
+
+#########################################
+# Git Prerequisites & Code Pull
+#########################################
+- name: Install Git
+  ansible.builtin.yum:
+    name: git
+    state: present
+  become: true
+
+- name: Remove existing clone directory if exists
+  ansible.builtin.file:
+    path: "{{ git_clone_path }}"
+    state: absent
+  become: true
+
+- name: Clone repository from Bitbucket (shallow)
+  ansible.builtin.shell: |
+    export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+    timeout 300 git clone --depth 1 -b {{ git_branch }} {{ git_repo_url }} {{ git_clone_path }}
+  become: true
+  changed_when: true
+
+#########################################
+# PHP & Composer Prereqs
+#########################################
+- name: Install PHP and required packages (offline)
+  ansible.builtin.yum:
+    name:
+      - php
+      - php-cli
+      - php-common
+      - php-mbstring
+      - php-xml
+      - php-mysqlnd
+      - php-bcmath
+      - php-pdo
+      - php-opcache
+      - php-zip
+      - unzip
+      - curl
+    state: present
+  become: true
+
+#########################################
+# Ensure Directory Structure
+#########################################
+- name: Ensure BackOffice directory exists
+  ansible.builtin.file:
+    path: "/mnt/v2-markets/prod_{{ market }}/server/production"
+    state: directory
+    mode: '0755'
+    recurse: true
+  become: true
+
+- name: Ensure Frontend directory exists
+  ansible.builtin.file:
+    path: "/mnt/www/prod_{{ market }}/nespresso_ev2-client"
+    state: directory
+    mode: '0755'
+    recurse: true
+  become: true
+
+#########################################
+# Backend Deployment (Git Pull + Copy)
+#########################################
+- name: Check if backend deployment already exists
+  ansible.builtin.stat:
+    path: "/mnt/v2-markets/prod_{{ market }}/server/production/.git"
+  register: backend_git_exists
+
+- name: Initialize backend git repository if not exists
+  ansible.builtin.shell: |
+    cd /mnt/v2-markets/prod_{{ market }}/server/production
+    git init
+    git remote add origin {{ git_repo_url }}
+  become: true
+  when: not backend_git_exists.stat.exists
+  changed_when: true
+  failed_when: false
+
+- name: Git pull latest backend code (always execute)
+  ansible.builtin.shell: |
+    cd /mnt/v2-markets/prod_{{ market }}/server/production
+    export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+    git pull --no-edit origin {{ git_branch | default('master') }} || git fetch origin {{ git_branch | default('master') }} && git reset --hard origin/{{ git_branch | default('master') }}
+    echo "Backend git pull completed: $(date)"
+  become: true
+  changed_when: true
+  failed_when: false
+
+- name: Check if backend source exists (fallback)
+  ansible.builtin.stat:
+    path: "{{ tap_backend_source_path }}"
+  register: backend_dir
+
+- name: Copy backend code from source (fallback if git fails)
+  ansible.builtin.shell: |
+    echo "Backend copy started: $(date)"
+    timeout 300 cp -r {{ tap_backend_source_path }}/* /mnt/v2-markets/prod_{{ market }}/server/production/
+    echo "Backend copy completed: $(date)"
+  become: true
+  when: backend_dir.stat.exists
+  changed_when: true
+
+#########################################
+# Laravel Setup: Composer + Artisan
+#########################################
+- name: Check if composer.lock exists
+  ansible.builtin.stat:
+    path: "/mnt/v2-markets/prod_{{ market }}/server/production/composer.lock"
+  register: composer_lock
+
+- name: Create minimal composer.json if missing
+  ansible.builtin.copy:
+    content: |
+      {
+          "require": {
+              "php": ">=7.4",
+              "laravel/framework": "^8.0"
+          },
+          "autoload": {
+              "psr-4": {
+                  "App\\": "app/"
+              }
+          }
+      }
+    dest: "/mnt/v2-markets/prod_{{ market }}/server/production/composer.json"
+    mode: '0644'
+  become: true
+  when: not composer_lock.stat.exists
+  changed_when: true
+
+- name: Run Composer install (always execute if lock exists)
+  ansible.builtin.shell: |
+    timeout 300 php composer.phar install --no-dev --no-scripts --prefer-dist --no-interaction --ignore-platform-reqs || echo "Composer timeout, continuing"
+  args:
+    chdir: "/mnt/v2-markets/prod_{{ market }}/server/production"
+  become: true
+  when: composer_lock.stat.exists
+  register: composer_install_result
+  failed_when: false
+  changed_when: true
+  retries: 2
+  delay: 30
+
+- name: Run Composer update (always execute)
+  ansible.builtin.shell: |
+    echo "Composer update started: $(date)"
+    timeout 900 php composer.phar update --no-dev --optimize-autoloader --prefer-dist --no-interaction || timeout 900 composer update --no-dev --optimize-autoloader --prefer-dist --no-interaction
+    echo "Composer update completed: $(date)"
+    ls -la vendor/ || echo "Vendor directory not created"
+  args:
+    chdir: "/mnt/v2-markets/prod_{{ market }}/server/production"
+  become: true
+  register: composer_update_result
+  changed_when: true
+  failed_when: false
+
+- name: Verify vendor directory exists
+  ansible.builtin.stat:
+    path: "/mnt/v2-markets/prod_{{ market }}/server/production/vendor/autoload.php"
+  register: autoload_check
+
+- name: Show composer results for debugging
+  ansible.builtin.debug:
+    msg: "Autoload exists: {{ autoload_check.stat.exists }}"
+
+- name: Check if Laravel framework is installed
+  ansible.builtin.stat:
+    path: "/mnt/v2-markets/prod_{{ market }}/server/production/vendor/laravel/framework/src/Illuminate/Foundation/Application.php"
+  register: laravel_check
+
+- name: Clear and cache Laravel config, views, and routes (always execute)
+  ansible.builtin.shell: |
+    php artisan cache:clear || echo "Cache clear failed"
+    php artisan config:cache || echo "Config cache failed"
+    php artisan view:clear || echo "View clear failed"
+    php artisan view:cache || echo "View cache failed"
+    php artisan route:clear || echo "Route clear failed"
+  args:
+    chdir: "/mnt/v2-markets/prod_{{ market }}/server/production"
+    executable: /bin/bash
+  become: true
+  changed_when: true
+  failed_when: false
+
+- name: Notify release via artisan (always execute)
+  ansible.builtin.shell: php artisan release_notification:notify --force || echo "Release notification failed"
+  args:
+    chdir: "/mnt/v2-markets/prod_{{ market }}/server/production"
+    executable: /bin/bash
+  become: true
+  register: artisan_notify_result
+  failed_when: false
+  changed_when: true
+  notify: Restart Supervisor
+
+- name: Sync translations (always execute if file provided)
+  ansible.builtin.shell: php artisan sync:translations --filename={{ translation_file }} || echo "Translation sync failed"
+  when: translation_file is defined
+  args:
+    chdir: "/mnt/v2-markets/prod_{{ market }}/server/production"
+    executable: /bin/bash
+  become: true
+  register: sync_translations_result
+  failed_when: false
+  changed_when: true
+
+#########################################
+# Frontend Deployment (Git Pull + Copy)
+#########################################
+- name: Check if frontend deployment already exists
+  ansible.builtin.stat:
+    path: "/mnt/www/prod_{{ market }}/nespresso_ev2-client/.git"
+  register: frontend_git_exists
+
+- name: Initialize frontend git repository if not exists
+  ansible.builtin.shell: |
+    cd /mnt/www/prod_{{ market }}/nespresso_ev2-client
+    git init
+    git remote add origin {{ frontend_git_repo_url | default(git_repo_url) }}
+  become: true
+  when: not frontend_git_exists.stat.exists
+  changed_when: true
+  failed_when: false
+
+- name: Git stash frontend changes (always execute)
+  ansible.builtin.shell: |
+    cd /mnt/www/prod_{{ market }}/nespresso_ev2-client
+    git stash || echo "Nothing to stash"
+  become: true
+  changed_when: true
+  failed_when: false
+
+- name: Git pull latest frontend code (always execute)
+  ansible.builtin.shell: |
+    cd /mnt/www/prod_{{ market }}/nespresso_ev2-client
+    export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+    git pull --no-edit origin {{ git_branch | default('master') }} || git fetch origin {{ git_branch | default('master') }} && git reset --hard origin/{{ git_branch | default('master') }}
+    echo "Frontend git pull completed: $(date)"
+  become: true
+  changed_when: true
+  failed_when: false
+
+- name: Check if frontend source exists (fallback)
+  ansible.builtin.stat:
+    path: "{{ tap_frontend_source_path }}"
+  register: frontend_dir
+
+- name: Copy frontend code from source (fallback if git fails)
+  ansible.builtin.shell: |
+    echo "Frontend copy started: $(date)"
+    timeout 300 cp -r {{ tap_frontend_source_path }}/* /mnt/www/prod_{{ market }}/nespresso_ev2-client/
+    echo "Frontend copy completed: $(date)"
+  become: true
+  when: frontend_dir.stat.exists
+  changed_when: true
+
+#########################################
+# Build Frontend (NPM)
+#########################################
+- name: Install Node.js and npm
+  ansible.builtin.yum:
+    name:
+      - nodejs
+      - npm
+    state: present
+  become: true
+
+- name: Check disk space before NPM build
+  ansible.builtin.command: df -h
+  register: disk_status
+  changed_when: false
+
+- name: Show disk usage
+  ansible.builtin.debug:
+    var: disk_status.stdout_lines
+
+- name: Log npm build start
+  ansible.builtin.debug:
+    msg: "Starting npm build for {{ market }} at {{ ansible_date_time.time }}"
+
+- name: Install npm dependencies (always execute)
+  ansible.builtin.shell: |
+    export NODE_OPTIONS={{ node_options | default('--max-old-space-size=4096') }}
+    timeout 600 npm ci --silent --no-audit --no-fund || { echo "npm ci failed, trying npm install"; timeout 600 npm install --silent --no-audit --no-fund; }
+  args:
+    chdir: "/mnt/www/prod_{{ market }}/nespresso_ev2-client"
+    executable: /bin/bash
+  become: true
+  register: npm_install_result
+  failed_when: false
+  changed_when: true
+  retries: 2
+  delay: 60
+
+- name: Build frontend (always execute)
+  ansible.builtin.shell: |
+    export NODE_OPTIONS={{ node_options | default('--max-old-space-size=4096') }}
+    timeout 600 npm run pub --silent
+  args:
+    chdir: "/mnt/www/prod_{{ market }}/nespresso_ev2-client"
+    executable: /bin/bash
+  become: true
+  register: npm_build_result
+  failed_when: false
+  changed_when: true
+  retries: 2
+  delay: 60
+
+#########################################
+# Publish Frontend Version
+#########################################
+- name: Check if version directory exists
+  ansible.builtin.stat:
+    path: "/mnt/www/prod_{{ market }}/nespresso_ev2-client/dist/{{ version }}"
+  register: version_dir
+
+- name: Create version directory if missing
+  ansible.builtin.file:
+    path: "/mnt/www/prod_{{ market }}/nespresso_ev2-client/dist/{{ version }}"
+    state: directory
+    mode: '0755'
+  become: true
+  when: not version_dir.stat.exists
+
+- name: Publish frontend version {{ version }}
+  ansible.builtin.shell: |
+    cd /mnt/www/prod_{{ market }}/nespresso_ev2-client/dist
+    if [ -L "production" ]; then
+      rm production
+    elif [ -d "production" ]; then
+      echo "⚠️ 'production' is a real directory. Skipping deletion."
+      exit 1
+    fi
+    ln -s {{ version }} production
+    ls -la production
+  args:
+    executable: /bin/bash
+  become: true
+  changed_when: true

@@ -1,0 +1,2 @@
+---
+- include_tasks: configure_with_git_pull.yml
