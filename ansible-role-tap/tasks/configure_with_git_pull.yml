@@ -107,6 +107,7 @@
     cd /mnt/v2-markets/prod_{{ market }}/server/production
     git init
     git remote add origin {{ git_repo_url }}
+    export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
   become: true
   when: not backend_git_exists.stat.exists
   changed_when: true
@@ -252,7 +253,8 @@
   ansible.builtin.shell: |
     cd /mnt/www/prod_{{ market }}/nespresso_ev2-client
     git init
-    git remote add origin {{ frontend_git_repo_url | default(git_repo_url) }}
+    git remote add origin {{ git_repo_url }}
+    export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
   become: true
   when: not frontend_git_exists.stat.exists
   changed_when: true

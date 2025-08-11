@@ -33,14 +33,14 @@ tap_node_options: "--max_old_space_size=4096"
 tap_async_timeout: 60
 tap_parallel_limit: 4
 
-# production Git repository configuration (using public IP)
-tap_backend_repo_url: "http://52.166.71.39:7999/scm/ans/ansible-role-tap.git"
-tap_frontend_repo_url: "http://52.166.71.39:7999/scm/ans/ansible-role-tap.git"
-tap_git_branch: "master"
+# Git repository configuration (working SSH configuration)
+git_repo_url: "ssh://git@52.166.71.39:7999/ans/ansible-role-tap.git"
+git_branch: "master"
+git_clone_path: "/tmp/ansible-role-tap"
 
-# Corrected source paths (actual repository structure)
-tap_backend_source_path: "/mnt/tap_source/back/nespresso_ev2-server-rc-mobile_php81"
-tap_frontend_source_path: "/mnt/tap_source/front/nespresso_ev2-client-master"
+# Source paths for backend and frontend code (after git clone)
+tap_backend_source_path: "/tmp/ansible-role-tap/nespresso-test/new_infra_tap_source/back/nespresso_ev2-server-rc-mobile_php81"
+tap_frontend_source_path: "/tmp/ansible-role-tap/nespresso-test/new_infra_tap_source/front/nespresso_ev2-client-master"
 
 # production deployment paths
 tap_backend_clone_path: "/tmp/ansible-role-tap_backend"
@@ -69,7 +69,3 @@ tap_npm_production_build: true
 tap_composer_install_enabled: true
 tap_composer_optimize_autoloader: true
 tap_composer_no_dev: true
-
-# Bitbucket Authentication (use ansible-vault for security)
-# vault_bitbucket_username: "your-username"
-# vault_bitbucket_password: "your-password"
