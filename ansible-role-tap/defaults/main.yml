@@ -38,6 +38,11 @@ git_repo_url: "ssh://git@52.166.71.39:7999/ans/ansible-role-tap.git"
 git_branch: "master"
 git_clone_path: "/tmp/ansible-role-tap"
 
+# Repository URLs for configure.yml compatibility
+tap_backend_repo_url: "ssh://git@52.166.71.39:7999/ans/ansible-role-tap.git"
+tap_frontend_repo_url: "ssh://git@52.166.71.39:7999/ans/ansible-role-tap.git"
+tap_git_branch: "master"
+
 # Source paths for backend and frontend code (after git clone)
 tap_backend_source_path: "/tmp/ansible-role-tap/nespresso-test/new_infra_tap_source/back/nespresso_ev2-server-rc-mobile_php81"
 tap_frontend_source_path: "/tmp/ansible-role-tap/nespresso-test/new_infra_tap_source/front/nespresso_ev2-client-master"
