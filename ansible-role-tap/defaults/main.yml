@@ -1,24 +1,25 @@
 ---
 # defaults file 
 # adding this just to test purpose
-# All markets for production deployment (matching manual script)
+# Reduced markets for testing (add more after successful deployment)
 tap_markets:
   - pl
   - gr
   - at
   - cz
-  - pt
-  - be
-  - es
-  - fr
-  - it
-  - ch
-  - ro
-  - il
-  - nord
-  - uk
-  - nl
-  - tr
+# Full market list:
+# - pt
+# - be
+# - es
+# - fr
+# - it
+# - ch
+# - ro
+# - il
+# - nord
+# - uk
+# - nl
+# - tr
 
 # Default version
 tap_version: "20240724"
@@ -30,8 +31,10 @@ tap_translation_file: "translations.json"
 tap_node_options: "--max_old_space_size=4096"
 
 # Performance optimization
-tap_async_timeout: 60
-tap_parallel_limit: 4
+tap_async_timeout: 120
+tap_parallel_limit: 8
+tap_deployment_strategy: "parallel"
+tap_batch_size: 4
 
 # Git repository configuration (working SSH configuration)
 git_repo_url: "ssh://git@52.166.71.39:7999/ans/ansible-role-tap.git"
@@ -54,6 +57,8 @@ tap_frontend_clone_path: "/tmp/ansible-role-tap_frontend"
 # Force fresh deployment
 tap_force_fresh_deployment: true
 tap_cleanup_old_deployments: true
+tap_aggressive_cleanup: true
+tap_cleanup_temp_files: true
 
 # Translation sync configuration
 tap_translation_sync_enabled: true
