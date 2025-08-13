@@ -114,6 +114,11 @@
     path: "/mnt/v2-markets/prod_{{ market }}/server/production/composer.lock"
   register: composer_lock
 
+- name: SAFETY CHECK - Fail if no composer.lock in production
+  ansible.builtin.fail:
+    msg: "CRITICAL: composer.lock not found. Cannot deploy safely to production without locked dependencies."
+  when: not composer_lock.stat.exists and tap_require_composer_lock|default(true)
+
 - name: Setup composer cache directory
   ansible.builtin.file:
     path: "{{ tap_composer_cache_dir }}"

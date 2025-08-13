@@ -1,25 +1,24 @@
 ---
 # defaults file 
 # adding this just to test purpose
-# Reduced markets for testing (add more after successful deployment)
+# All markets for production deployment
 tap_markets:
   - pl
   - gr
   - at
   - cz
-# Full market list:
-# - pt
-# - be
-# - es
-# - fr
-# - it
-# - ch
-# - ro
-# - il
-# - nord
-# - uk
-# - nl
-# - tr
+  - pt
+  - be
+  - es
+  - fr
+  - it
+  - ch
+  - ro
+  - il
+  - nord
+  - uk
+  - nl
+  - tr
 
 # Default version
 tap_version: "20240724"
@@ -80,7 +79,7 @@ tap_use_npm_install: true
 tap_npm_cache_enabled: true
 tap_npm_production_build: true
 
-# Composer configuration - Optimized for speed
+# Composer configuration - Production Safety
 tap_composer_install_enabled: true
 tap_composer_optimize_autoloader: true
 tap_composer_no_dev: true
@@ -91,3 +90,5 @@ tap_composer_cache_enabled: true
 tap_composer_skip_update: true  # Skip update in production
 tap_composer_force_update: false  # Set to true only if dependencies must be updated
 tap_composer_apcu_autoloader: true
+tap_require_composer_lock: true  # SAFETY: Fail if composer.lock missing
+tap_backup_vendor: true  # Backup vendor directory before changes
