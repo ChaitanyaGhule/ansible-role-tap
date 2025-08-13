@@ -46,9 +46,9 @@ tap_backend_repo_url: "ssh://git@52.166.71.39:7999/ans/ansible-role-tap.git"
 tap_frontend_repo_url: "ssh://git@52.166.71.39:7999/ans/ansible-role-tap.git"
 tap_git_branch: "master"
 
-# Source paths for backend and frontend code (static for sequential execution)
-tap_backend_source_path: "/tmp/ansible-role-tap_backend/nespresso-test/new_infra_tap_source/back/nespresso_ev2-server-rc-mobile_php81"
-tap_frontend_source_path: "/tmp/ansible-role-tap_frontend/nespresso-test/new_infra_tap_source/front/nespresso_ev2-client-master"
+# Source paths - Use git pull directly, disable fallback copy
+# tap_backend_source_path: "/tmp/ansible-role-tap_backend/nespresso-test/new_infra_tap_source/back/nespresso_ev2-server-rc-mobile_php81"
+# tap_frontend_source_path: "/tmp/ansible-role-tap_frontend/nespresso-test/new_infra_tap_source/front/nespresso_ev2-client-master"
 
 # production deployment paths (static for sequential execution)
 tap_backend_clone_path: "/tmp/ansible-role-tap_backend"
