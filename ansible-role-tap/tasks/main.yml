@@ -1,2 +1,20 @@
 ---
-- include_tasks: configure_with_git_pull.yml
+# Deploy TAP application in parallel batches
+- name: Deploy TAP application in parallel batches
+  include_tasks: configure_optimized.yml
+  loop: "{{ tap_markets }}"
+  loop_control:
+    loop_var: market
+  async: "{{ tap_async_timeout | default(1800) }}"
+  poll: 0
+  register: deployment_jobs
+
+- name: Wait for all deployments to complete
+  async_status:
+    jid: "{{ item.ansible_job_id }}"
+  register: deployment_results
+  until: deployment_results.finished
+  retries: "{{ (tap_async_timeout | default(1800) / 10) | int }}"
+  delay: 10
+  loop: "{{ deployment_jobs.results }}"
+  when: item.ansible_job_id is defined

@@ -30,11 +30,12 @@ tap_translation_file: "translations.json"
 # Optimized Node.js options for 16 markets deployment
 tap_node_options: "--max_old_space_size=4096"
 
-# Performance optimization
-tap_async_timeout: 120
-tap_parallel_limit: 8
+# Performance optimization - Parallel execution
+tap_async_timeout: 1800  # 30 minutes for parallel deployment
+tap_parallel_limit: 4    # Deploy 4 markets simultaneously
 tap_deployment_strategy: "parallel"
 tap_batch_size: 4
+tap_enable_parallel: true
 
 # Git repository configuration (working SSH configuration)
 git_repo_url: "ssh://git@52.166.71.39:7999/ans/ansible-role-tap.git"
@@ -46,13 +47,17 @@ tap_backend_repo_url: "ssh://git@52.166.71.39:7999/ans/ansible-role-tap.git"
 tap_frontend_repo_url: "ssh://git@52.166.71.39:7999/ans/ansible-role-tap.git"
 tap_git_branch: "master"
 
-# Source paths for backend and frontend code (after git clone)
-tap_backend_source_path: "/tmp/ansible-role-tap_backend_pl/nespresso-test/new_infra_tap_source/back/nespresso_ev2-server-rc-mobile_php81"
-tap_frontend_source_path: "/tmp/ansible-role-tap_frontend_pl/nespresso-test/new_infra_tap_source/front/nespresso_ev2-client-master"
+# Source paths for backend and frontend code (dynamic per market)
+tap_backend_source_path: "/tmp/ansible-role-tap_backend_{{ market | default('pl') }}/nespresso-test/new_infra_tap_source/back/nespresso_ev2-server-rc-mobile_php81"
+tap_frontend_source_path: "/tmp/ansible-role-tap_frontend_{{ market | default('pl') }}/nespresso-test/new_infra_tap_source/front/nespresso_ev2-client-master"
 
-# production deployment paths
-tap_backend_clone_path: "/tmp/ansible-role-tap_backend"
-tap_frontend_clone_path: "/tmp/ansible-role-tap_frontend"
+# production deployment paths (dynamic per market)
+tap_backend_clone_path: "/tmp/ansible-role-tap_backend_{{ market | default('pl') }}"
+tap_frontend_clone_path: "/tmp/ansible-role-tap_frontend_{{ market | default('pl') }}"
+
+# Cache directories (shared across markets)
+tap_composer_cache_dir: "/tmp/composer-cache"
+tap_npm_cache_dir: "/tmp/npm-cache"
 
 # Force fresh deployment
 tap_force_fresh_deployment: true
@@ -75,7 +80,14 @@ tap_use_npm_install: true
 tap_npm_cache_enabled: true
 tap_npm_production_build: true
 
-# Composer configuration
+# Composer configuration - Optimized for speed
 tap_composer_install_enabled: true
 tap_composer_optimize_autoloader: true
 tap_composer_no_dev: true
+tap_composer_no_scripts: true
+tap_composer_no_interaction: true
+tap_composer_prefer_dist: true
+tap_composer_cache_enabled: true
+tap_composer_skip_update: true  # Skip update in production
+tap_composer_force_update: false  # Set to true only if dependencies must be updated
+tap_composer_apcu_autoloader: true

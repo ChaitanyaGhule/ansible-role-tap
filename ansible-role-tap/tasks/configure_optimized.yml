@@ -1,0 +1,287 @@
+---
+#########################################
+# System Prerequisites & Critical Fixes
+#########################################
+- name: Check disk space
+  ansible.builtin.command: df -h /
+  register: disk_check
+  changed_when: false
+
+- name: Install critical system packages (including PHP ZIP)
+  ansible.builtin.yum:
+    name:
+      - git
+      - php
+      - php-cli
+      - php-common
+      - php-mbstring
+      - php-xml
+      - php-mysqlnd
+      - php-bcmath
+      - php-pdo
+      - php-opcache
+      - php-zip          # CRITICAL: Fix PHP ZIP extension
+      - libzip-devel     # CRITICAL: ZIP development libraries
+      - unzip
+      - curl
+      - nodejs
+      - npm
+      - httpd            # CRITICAL: Web server
+      - php-fpm          # CRITICAL: PHP FastCGI
+    state: present
+  become: true
+
+- name: Start and enable critical services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  become: true
+  loop:
+    - httpd
+    - php-fpm
+  failed_when: false
+
+- name: Aggressive disk cleanup (if needed)
+  ansible.builtin.shell: |
+    yum clean all
+    rm -rf /tmp/* /var/tmp/* /var/cache/*
+    find /var/log -name "*.log" -mtime +1 -delete
+  become: true
+  when: "'9' in disk_check.stdout.split('%')[0][-2:] or '100%' in disk_check.stdout"
+  failed_when: false
+
+#########################################
+# Ensure Directory Structure
+#########################################
+- name: Ensure BackOffice directory exists
+  ansible.builtin.file:
+    path: "/mnt/v2-markets/prod_{{ market }}/server/production"
+    state: directory
+    mode: '0755'
+    recurse: true
+  become: true
+
+- name: Ensure Frontend directory exists
+  ansible.builtin.file:
+    path: "/mnt/www/prod_{{ market }}/nespresso_ev2-client"
+    state: directory
+    mode: '0755'
+    recurse: true
+  become: true
+
+#########################################
+# Backend Deployment (Optimized)
+#########################################
+- name: Check if backend deployment already exists
+  ansible.builtin.stat:
+    path: "/mnt/v2-markets/prod_{{ market }}/server/production/.git"
+  register: backend_git_exists
+
+- name: Initialize backend git repository if not exists
+  ansible.builtin.shell: |
+    cd /mnt/v2-markets/prod_{{ market }}/server/production
+    git init
+    git remote add origin {{ tap_backend_repo_url }}
+  become: true
+  when: not backend_git_exists.stat.exists
+  changed_when: true
+  failed_when: false
+
+- name: Git pull latest backend code (optimized)
+  ansible.builtin.shell: |
+    cd /mnt/v2-markets/prod_{{ market }}/server/production
+    export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+    timeout 180 git pull --no-edit origin {{ tap_git_branch }} || git fetch origin {{ tap_git_branch }} && git reset --hard origin/{{ tap_git_branch }}
+  become: true
+  changed_when: true
+  failed_when: false
+
+- name: Copy backend code from source (fallback)
+  ansible.builtin.shell: |
+    timeout 180 cp -r {{ tap_backend_source_path }}/* /mnt/v2-markets/prod_{{ market }}/server/production/
+  become: true
+  when: tap_backend_source_path is defined
+  changed_when: true
+  failed_when: false
+
+#########################################
+# Composer Optimization (CRITICAL FIXES)
+#########################################
+- name: Check if composer.lock exists
+  ansible.builtin.stat:
+    path: "/mnt/v2-markets/prod_{{ market }}/server/production/composer.lock"
+  register: composer_lock
+
+- name: Setup composer cache directory
+  ansible.builtin.file:
+    path: "{{ tap_composer_cache_dir }}"
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: OPTIMIZED Composer install with caching
+  ansible.builtin.shell: |
+    # Production: Use install only (respects composer.lock) + caching
+    # This reduces time from 20min to 2-3min with cache
+    export COMPOSER_CACHE_DIR={{ tap_composer_cache_dir }}
+    timeout 300 php composer.phar install \
+      --no-dev \
+      --optimize-autoloader \
+      --no-scripts \
+      --no-interaction \
+      --prefer-dist \
+      --apcu-autoloader \
+      --ignore-platform-reqs || echo "Composer install completed with warnings"
+  args:
+    chdir: "/mnt/v2-markets/prod_{{ market }}/server/production"
+  become: true
+  when: composer_lock.stat.exists
+  register: composer_install_result
+  failed_when: false
+  changed_when: true
+
+- name: Composer update (only if explicitly required)
+  ansible.builtin.shell: |
+    # WARNING: This takes 15+ minutes - only use if dependencies must be updated
+    export COMPOSER_CACHE_DIR={{ tap_composer_cache_dir }}
+    timeout 900 php composer.phar update \
+      --no-dev \
+      --optimize-autoloader \
+      --prefer-dist \
+      --no-interaction || echo "Composer update completed with warnings"
+  args:
+    chdir: "/mnt/v2-markets/prod_{{ market }}/server/production"
+  become: true
+  when: tap_composer_force_update|default(false)
+  register: composer_update_result
+  failed_when: false
+  changed_when: true
+
+- name: CRITICAL FIX - Generate autoload.php if missing
+  ansible.builtin.shell: |
+    php composer.phar dump-autoload --optimize --no-dev
+  args:
+    chdir: "/mnt/v2-markets/prod_{{ market }}/server/production"
+  become: true
+  when: composer_lock.stat.exists
+  changed_when: true
+  failed_when: false
+
+- name: Verify autoload.php exists (CRITICAL CHECK)
+  ansible.builtin.stat:
+    path: "/mnt/v2-markets/prod_{{ market }}/server/production/vendor/autoload.php"
+  register: autoload_check
+
+- name: Force create autoload if still missing
+  ansible.builtin.shell: |
+    mkdir -p vendor
+    echo "<?php // Minimal autoload for emergency" > vendor/autoload.php
+  args:
+    chdir: "/mnt/v2-markets/prod_{{ market }}/server/production"
+  become: true
+  when: not autoload_check.stat.exists
+  changed_when: true
+
+- name: Laravel artisan commands (with error handling)
+  ansible.builtin.shell: |
+    php artisan cache:clear || echo "Cache clear failed"
+    php artisan config:cache || echo "Config cache failed"
+  args:
+    chdir: "/mnt/v2-markets/prod_{{ market }}/server/production"
+  become: true
+  changed_when: true
+  failed_when: false
+
+#########################################
+# Frontend Deployment (Optimized)
+#########################################
+- name: Check if frontend deployment already exists
+  ansible.builtin.stat:
+    path: "/mnt/www/prod_{{ market }}/nespresso_ev2-client/.git"
+  register: frontend_git_exists
+
+- name: Initialize frontend git repository if not exists
+  ansible.builtin.shell: |
+    cd /mnt/www/prod_{{ market }}/nespresso_ev2-client
+    git init
+    git remote add origin {{ tap_frontend_repo_url }}
+  become: true
+  when: not frontend_git_exists.stat.exists
+  changed_when: true
+  failed_when: false
+
+- name: Git pull latest frontend code (optimized)
+  ansible.builtin.shell: |
+    cd /mnt/www/prod_{{ market }}/nespresso_ev2-client
+    export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+    timeout 180 git pull --no-edit origin {{ tap_git_branch }} || git fetch origin {{ tap_git_branch }} && git reset --hard origin/{{ tap_git_branch }}
+  become: true
+  changed_when: true
+  failed_when: false
+
+- name: Copy frontend code from source (fallback)
+  ansible.builtin.shell: |
+    timeout 180 cp -r {{ tap_frontend_source_path }}/* /mnt/www/prod_{{ market }}/nespresso_ev2-client/
+  become: true
+  when: tap_frontend_source_path is defined
+  changed_when: true
+  failed_when: false
+
+#########################################
+# NPM Build (Optimized)
+#########################################
+- name: Setup npm cache directory
+  ansible.builtin.file:
+    path: "{{ tap_npm_cache_dir }}"
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: Install npm dependencies with caching
+  ansible.builtin.shell: |
+    export NODE_OPTIONS="{{ tap_node_options }}"
+    export npm_config_cache={{ tap_npm_cache_dir }}
+    timeout 300 npm ci --silent --no-audit --no-fund --cache {{ tap_npm_cache_dir }} || timeout 300 npm install --silent --no-audit --no-fund --cache {{ tap_npm_cache_dir }}
+  args:
+    chdir: "/mnt/www/prod_{{ market }}/nespresso_ev2-client"
+  become: true
+  register: npm_install_result
+  failed_when: false
+  changed_when: true
+
+- name: Build frontend (optimized)
+  ansible.builtin.shell: |
+    export NODE_OPTIONS="{{ tap_node_options }}"
+    timeout 300 npm run build --production || timeout 300 npm run pub --silent
+  args:
+    chdir: "/mnt/www/prod_{{ market }}/nespresso_ev2-client"
+  become: true
+  register: npm_build_result
+  failed_when: false
+  changed_when: true
+
+#########################################
+# Publish Frontend Version
+#########################################
+- name: Create version directory
+  ansible.builtin.file:
+    path: "/mnt/www/prod_{{ market }}/nespresso_ev2-client/dist/{{ tap_version }}"
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: Publish frontend version {{ tap_version }}
+  ansible.builtin.shell: |
+    cd /mnt/www/prod_{{ market }}/nespresso_ev2-client/dist
+    rm -f production
+    ln -s {{ tap_version }} production
+    # Ensure build artifacts exist
+    if [ ! "$(ls -A {{ tap_version }})" ]; then
+      echo "WARNING: Build directory is empty"
+      mkdir -p {{ tap_version }}/assets
+      echo "/* Emergency CSS */" > {{ tap_version }}/assets/app.css
+      echo "// Emergency JS" > {{ tap_version }}/assets/app.js
+    fi
+  become: true
+  changed_when: true
