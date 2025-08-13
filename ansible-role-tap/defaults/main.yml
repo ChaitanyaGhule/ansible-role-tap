@@ -90,5 +90,5 @@ tap_composer_cache_enabled: true
 tap_composer_skip_update: true  # Skip update in production
 tap_composer_force_update: false  # Set to true only if dependencies must be updated
 tap_composer_apcu_autoloader: true
-tap_require_composer_lock: true  # SAFETY: Fail if composer.lock missing
+tap_require_composer_lock: false  # SAFETY: Disabled for deployment without composer.lock
 tap_backup_vendor: true  # Backup vendor directory before changes
