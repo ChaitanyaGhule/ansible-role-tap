@@ -30,12 +30,12 @@ tap_translation_file: "translations.json"
 # Optimized Node.js options for 16 markets deployment
 tap_node_options: "--max_old_space_size=4096"
 
-# Performance optimization - Parallel execution
-tap_async_timeout: 1800  # 30 minutes for parallel deployment
-tap_parallel_limit: 4    # Deploy 4 markets simultaneously
-tap_deployment_strategy: "parallel"
-tap_batch_size: 4
-tap_enable_parallel: true
+# Performance optimization
+tap_async_timeout: 1800  # Reserved for future parallel implementation
+tap_parallel_limit: 4    # Reserved for future parallel implementation
+tap_deployment_strategy: "sequential"  # Currently sequential
+tap_batch_size: 4        # Reserved for future parallel implementation
+tap_enable_parallel: false  # Currently disabled
 
 # Git repository configuration (working SSH configuration)
 git_repo_url: "ssh://git@52.166.71.39:7999/ans/ansible-role-tap.git"
@@ -47,13 +47,13 @@ tap_backend_repo_url: "ssh://git@52.166.71.39:7999/ans/ansible-role-tap.git"
 tap_frontend_repo_url: "ssh://git@52.166.71.39:7999/ans/ansible-role-tap.git"
 tap_git_branch: "master"
 
-# Source paths for backend and frontend code (dynamic per market)
-tap_backend_source_path: "/tmp/ansible-role-tap_backend_{{ market | default('pl') }}/nespresso-test/new_infra_tap_source/back/nespresso_ev2-server-rc-mobile_php81"
-tap_frontend_source_path: "/tmp/ansible-role-tap_frontend_{{ market | default('pl') }}/nespresso-test/new_infra_tap_source/front/nespresso_ev2-client-master"
+# Source paths for backend and frontend code (static for sequential execution)
+tap_backend_source_path: "/tmp/ansible-role-tap_backend/nespresso-test/new_infra_tap_source/back/nespresso_ev2-server-rc-mobile_php81"
+tap_frontend_source_path: "/tmp/ansible-role-tap_frontend/nespresso-test/new_infra_tap_source/front/nespresso_ev2-client-master"
 
-# production deployment paths (dynamic per market)
-tap_backend_clone_path: "/tmp/ansible-role-tap_backend_{{ market | default('pl') }}"
-tap_frontend_clone_path: "/tmp/ansible-role-tap_frontend_{{ market | default('pl') }}"
+# production deployment paths (static for sequential execution)
+tap_backend_clone_path: "/tmp/ansible-role-tap_backend"
+tap_frontend_clone_path: "/tmp/ansible-role-tap_frontend"
 
 # Cache directories (shared across markets)
 tap_composer_cache_dir: "/tmp/composer-cache"
