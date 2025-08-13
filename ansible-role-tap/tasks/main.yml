@@ -1,7 +1,7 @@
 ---
 # Deploy TAP application in parallel batches
 - name: Deploy TAP application in parallel batches
-  include_tasks: configure_optimized.yml
+  ansible.builtin.include_tasks: configure_optimized.yml
   loop: "{{ tap_markets }}"
   loop_control:
     loop_var: market
@@ -10,7 +10,7 @@
   register: deployment_jobs
 
 - name: Wait for all deployments to complete
-  async_status:
+  ansible.builtin.async_status:
     jid: "{{ item.ansible_job_id }}"
   register: deployment_results
   until: deployment_results.finished

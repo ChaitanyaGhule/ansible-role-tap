@@ -50,6 +50,7 @@
   become: true
   when: "'9' in disk_check.stdout.split('%')[0][-2:] or '100%' in disk_check.stdout"
   failed_when: false
+  changed_when: true
 
 #########################################
 # Ensure Directory Structure
