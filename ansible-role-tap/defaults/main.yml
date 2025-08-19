@@ -68,6 +68,10 @@ tap_frontend_path: "{{ tap_frontend_base_path }}/prod_{{ market }}/nespresso_ev2
 tap_composer_cache_dir: "/tmp/composer-cache"
 tap_npm_cache_dir: "/tmp/npm-cache"
 
+# File ownership configuration
+tap_file_owner: "apache"
+tap_file_group: "apache"
+
 # Force fresh deployment
 tap_force_fresh_deployment: true
 tap_cleanup_old_deployments: true

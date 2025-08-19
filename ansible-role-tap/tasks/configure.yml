@@ -88,8 +88,8 @@
     path: "{{ item }}"
     state: directory
     mode: '0755'
-    owner: apache
-    group: apache
+    owner: "{{ tap_file_owner }}"
+    group: "{{ tap_file_group }}"
     recurse: true
   become: true
   loop:
@@ -101,8 +101,8 @@
     path: "{{ tap_backend_path }}"
     state: directory
     mode: '0755'
-    owner: apache
-    group: apache
+    owner: "{{ tap_file_owner }}"
+    group: "{{ tap_file_group }}"
     recurse: true
   become: true
 
@@ -111,8 +111,8 @@
     path: "{{ tap_frontend_path }}"
     state: directory
     mode: '0755'
-    owner: apache
-    group: apache
+    owner: "{{ tap_file_owner }}"
+    group: "{{ tap_file_group }}"
     recurse: true
   become: true
 
