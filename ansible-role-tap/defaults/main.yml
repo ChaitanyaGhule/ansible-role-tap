@@ -1,6 +1,6 @@
 ---
-# defaults file 
-# adding this just to test purpose
+# defaults file for TAP deployment
+# Production configuration variables for multi-market deployment
 # All markets for production deployment
 tap_markets:
   - pl
@@ -54,7 +54,17 @@ tap_git_branch: "master"
 tap_backend_clone_path: "/tmp/ansible-role-tap_backend"
 tap_frontend_clone_path: "/tmp/ansible-role-tap_frontend"
 
-# Cache directories (shared across markets)
+# CRITICAL FIX: Use persistent /opt paths instead of temporary /mnt
+# OLD RISKY PATHS: /mnt/v2-markets and /mnt/www (temporary storage)
+# NEW SAFE PATHS: /opt/tap/* (persistent storage)
+tap_backend_base_path: "/opt/tap/v2-markets"
+tap_frontend_base_path: "/opt/tap/www"
+
+# Derived paths for each market (using variables for maintainability)
+tap_backend_path: "{{ tap_backend_base_path }}/prod_{{ market }}/server/production"
+tap_frontend_path: "{{ tap_frontend_base_path }}/prod_{{ market }}/nespresso_ev2-client"
+
+# Cache directories (keep in /tmp as they are meant to be temporary)
 tap_composer_cache_dir: "/tmp/composer-cache"
 tap_npm_cache_dir: "/tmp/npm-cache"
 

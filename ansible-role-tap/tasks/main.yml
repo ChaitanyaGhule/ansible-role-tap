@@ -5,3 +5,9 @@
   loop: "{{ tap_markets }}"
   loop_control:
     loop_var: market
+
+- name: Post-deployment verification for each market
+  ansible.builtin.include_tasks: post_deployment_verification.yml
+  loop: "{{ tap_markets }}"
+  loop_control:
+    loop_var: market

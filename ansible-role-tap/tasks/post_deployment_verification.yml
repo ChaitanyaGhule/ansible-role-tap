@@ -1,0 +1,63 @@
+---
+# Post-deployment verification tasks (replaces separate shell scripts)
+# This integrates quick_check.sh, verification_commands.sh, and verify_git.sh functionality
+
+- name: Verify backend directory structure
+  ansible.builtin.stat:
+    path: "{{ tap_backend_path }}"
+  register: backend_dir_check
+  failed_when: not backend_dir_check.stat.exists
+
+- name: Verify frontend directory structure  
+  ansible.builtin.stat:
+    path: "{{ tap_frontend_path }}"
+  register: frontend_dir_check
+  failed_when: not frontend_dir_check.stat.exists
+
+- name: Verify composer autoload exists
+  ansible.builtin.stat:
+    path: "{{ tap_backend_path }}/vendor/autoload.php"
+  register: autoload_check
+  failed_when: not autoload_check.stat.exists
+
+- name: Verify version directory exists
+  ansible.builtin.stat:
+    path: "{{ tap_frontend_path }}/dist/{{ tap_version }}"
+  register: version_check
+  failed_when: not version_check.stat.exists
+
+- name: Verify git repository status (backend)
+  ansible.builtin.shell: |
+    cd {{ tap_backend_path }}
+    git status --porcelain
+  register: backend_git_status
+  failed_when: false
+  changed_when: false
+
+- name: Verify git repository status (frontend)
+  ansible.builtin.shell: |
+    cd {{ tap_frontend_path }}
+    git status --porcelain  
+  register: frontend_git_status
+  failed_when: false
+  changed_when: false
+
+- name: Check critical services status
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+  register: service_status
+  loop:
+    - httpd
+    - php-fpm
+  failed_when: false
+
+- name: Display verification summary
+  ansible.builtin.debug:
+    msg: |
+      === Deployment Verification Summary for {{ market }} ===
+      Backend Directory: {{ 'OK' if backend_dir_check.stat.exists else 'MISSING' }}
+      Frontend Directory: {{ 'OK' if frontend_dir_check.stat.exists else 'MISSING' }}
+      Composer Autoload: {{ 'OK' if autoload_check.stat.exists else 'MISSING' }}
+      Version {{ tap_version }}: {{ 'OK' if version_check.stat.exists else 'MISSING' }}
+      Apache Service: {{ service_status.results[0].status.ActiveState | default('Unknown') }}
+      PHP-FPM Service: {{ service_status.results[1].status.ActiveState | default('Unknown') }}

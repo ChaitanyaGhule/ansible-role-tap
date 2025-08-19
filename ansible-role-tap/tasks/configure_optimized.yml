@@ -55,19 +55,36 @@
 #########################################
 # Ensure Directory Structure
 #########################################
-- name: Ensure BackOffice directory exists
+- name: Ensure TAP base directories exist
   ansible.builtin.file:
-    path: "/mnt/v2-markets/prod_{{ market }}/server/production"
+    path: "{{ item }}"
     state: directory
     mode: '0755'
+    owner: apache
+    group: apache
+    recurse: true
+  become: true
+  loop:
+    - "{{ tap_backend_base_path }}"
+    - "{{ tap_frontend_base_path }}"
+
+- name: Ensure BackOffice directory exists
+  ansible.builtin.file:
+    path: "{{ tap_backend_path }}"
+    state: directory
+    mode: '0755'
+    owner: apache
+    group: apache
     recurse: true
   become: true
 
 - name: Ensure Frontend directory exists
   ansible.builtin.file:
-    path: "/mnt/www/prod_{{ market }}/nespresso_ev2-client"
+    path: "{{ tap_frontend_path }}"
     state: directory
     mode: '0755'
+    owner: apache
+    group: apache
     recurse: true
   become: true
 
@@ -76,12 +93,12 @@
 #########################################
 - name: Check if backend deployment already exists
   ansible.builtin.stat:
-    path: "/mnt/v2-markets/prod_{{ market }}/server/production/.git"
+    path: "{{ tap_backend_path }}/.git"
   register: backend_git_exists
 
 - name: Initialize backend git repository if not exists
   ansible.builtin.shell: |
-    cd /mnt/v2-markets/prod_{{ market }}/server/production
+    cd {{ tap_backend_path }}
     git init
     git remote add origin {{ tap_backend_repo_url }}
   become: true
@@ -91,7 +108,7 @@
 
 - name: Git pull latest backend code (optimized)
   ansible.builtin.shell: |
-    cd /mnt/v2-markets/prod_{{ market }}/server/production
+    cd {{ tap_backend_path }}
     export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
     timeout 180 git pull --no-edit origin {{ tap_git_branch }} || git fetch origin {{ tap_git_branch }} && git reset --hard origin/{{ tap_git_branch }}
   become: true
@@ -100,7 +117,7 @@
 
 - name: Copy backend code from source (fallback)
   ansible.builtin.shell: |
-    timeout 180 cp -r {{ tap_backend_source_path }}/* /mnt/v2-markets/prod_{{ market }}/server/production/
+    timeout 180 cp -r {{ tap_backend_source_path }}/* {{ tap_backend_path }}/
   become: true
   when: tap_backend_source_path is defined
   changed_when: true
@@ -111,7 +128,7 @@
 #########################################
 - name: Check if composer.lock exists
   ansible.builtin.stat:
-    path: "/mnt/v2-markets/prod_{{ market }}/server/production/composer.lock"
+    path: "{{ tap_backend_path }}/composer.lock"
   register: composer_lock
 
 - name: SAFETY CHECK - Fail if no composer.lock in production
@@ -140,7 +157,7 @@
       --apcu-autoloader \
       --ignore-platform-reqs || echo "Composer install completed with warnings"
   args:
-    chdir: "/mnt/v2-markets/prod_{{ market }}/server/production"
+    chdir: "{{ tap_backend_path }}"
   become: true
   when: composer_lock.stat.exists
   register: composer_install_result
@@ -157,7 +174,7 @@
       --prefer-dist \
       --no-interaction || echo "Composer update completed with warnings"
   args:
-    chdir: "/mnt/v2-markets/prod_{{ market }}/server/production"
+    chdir: "{{ tap_backend_path }}"
   become: true
   when: tap_composer_force_update|default(false)
   register: composer_update_result
@@ -168,7 +185,7 @@
   ansible.builtin.shell: |
     php composer.phar dump-autoload --optimize --no-dev
   args:
-    chdir: "/mnt/v2-markets/prod_{{ market }}/server/production"
+    chdir: "{{ tap_backend_path }}"
   become: true
   when: composer_lock.stat.exists
   changed_when: true
@@ -176,7 +193,7 @@
 
 - name: Verify autoload.php exists (CRITICAL CHECK)
   ansible.builtin.stat:
-    path: "/mnt/v2-markets/prod_{{ market }}/server/production/vendor/autoload.php"
+    path: "{{ tap_backend_path }}/vendor/autoload.php"
   register: autoload_check
 
 - name: Force create autoload if still missing
@@ -184,7 +201,7 @@
     mkdir -p vendor
     echo "<?php // Minimal autoload for emergency" > vendor/autoload.php
   args:
-    chdir: "/mnt/v2-markets/prod_{{ market }}/server/production"
+    chdir: "{{ tap_backend_path }}"
   become: true
   when: not autoload_check.stat.exists
   changed_when: true
@@ -194,7 +211,7 @@
     php artisan cache:clear || echo "Cache clear failed"
     php artisan config:cache || echo "Config cache failed"
   args:
-    chdir: "/mnt/v2-markets/prod_{{ market }}/server/production"
+    chdir: "{{ tap_backend_path }}"
   become: true
   changed_when: true
   failed_when: false
@@ -204,12 +221,12 @@
 #########################################
 - name: Check if frontend deployment already exists
   ansible.builtin.stat:
-    path: "/mnt/www/prod_{{ market }}/nespresso_ev2-client/.git"
+    path: "{{ tap_frontend_path }}/.git"
   register: frontend_git_exists
 
 - name: Initialize frontend git repository if not exists
   ansible.builtin.shell: |
-    cd /mnt/www/prod_{{ market }}/nespresso_ev2-client
+    cd {{ tap_frontend_path }}
     git init
     git remote add origin {{ tap_frontend_repo_url }}
   become: true
@@ -219,7 +236,7 @@
 
 - name: Git pull latest frontend code (optimized)
   ansible.builtin.shell: |
-    cd /mnt/www/prod_{{ market }}/nespresso_ev2-client
+    cd {{ tap_frontend_path }}
     export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
     timeout 180 git pull --no-edit origin {{ tap_git_branch }} || git fetch origin {{ tap_git_branch }} && git reset --hard origin/{{ tap_git_branch }}
   become: true
@@ -228,7 +245,7 @@
 
 - name: Copy frontend code from source (fallback)
   ansible.builtin.shell: |
-    timeout 180 cp -r {{ tap_frontend_source_path }}/* /mnt/www/prod_{{ market }}/nespresso_ev2-client/
+    timeout 180 cp -r {{ tap_frontend_source_path }}/* {{ tap_frontend_path }}/
   become: true
   when: tap_frontend_source_path is defined
   changed_when: true
@@ -250,7 +267,7 @@
     export npm_config_cache={{ tap_npm_cache_dir }}
     timeout 300 npm ci --silent --no-audit --no-fund --cache {{ tap_npm_cache_dir }} || timeout 300 npm install --silent --no-audit --no-fund --cache {{ tap_npm_cache_dir }}
   args:
-    chdir: "/mnt/www/prod_{{ market }}/nespresso_ev2-client"
+    chdir: "{{ tap_frontend_path }}"
   become: true
   register: npm_install_result
   failed_when: false
@@ -261,7 +278,7 @@
     export NODE_OPTIONS="{{ tap_node_options }}"
     timeout 300 npm run build --production || timeout 300 npm run pub --silent
   args:
-    chdir: "/mnt/www/prod_{{ market }}/nespresso_ev2-client"
+    chdir: "{{ tap_frontend_path }}"
   become: true
   register: npm_build_result
   failed_when: false
@@ -272,14 +289,14 @@
 #########################################
 - name: Create version directory
   ansible.builtin.file:
-    path: "/mnt/www/prod_{{ market }}/nespresso_ev2-client/dist/{{ tap_version }}"
+    path: "{{ tap_frontend_path }}/dist/{{ tap_version }}"
     state: directory
     mode: '0755'
   become: true
 
 - name: Publish frontend version {{ tap_version }}
   ansible.builtin.shell: |
-    cd /mnt/www/prod_{{ market }}/nespresso_ev2-client/dist
+    cd {{ tap_frontend_path }}/dist
     rm -f production
     ln -s {{ tap_version }} production
     # Ensure build artifacts exist
