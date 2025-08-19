@@ -85,7 +85,6 @@
     mode: '0755'
     owner: "{{ tap_file_owner }}"
     group: "{{ tap_file_group }}"
-    recurse: true
   become: true
   loop:
     - "{{ tap_backend_base_path }}"
@@ -98,7 +97,6 @@
     mode: '0755'
     owner: "{{ tap_file_owner }}"
     group: "{{ tap_file_group }}"
-    recurse: true
   become: true
 
 - name: Ensure Frontend directory exists
@@ -108,7 +106,6 @@
     mode: '0755'
     owner: "{{ tap_file_owner }}"
     group: "{{ tap_file_group }}"
-    recurse: true
   become: true
 
 #########################################
