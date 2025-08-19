@@ -26,7 +26,7 @@ tap_version: "20240724"
 # Default translation file
 tap_translation_file: "translations.json"
 
-# Optimized Node.js options for 16 markets deployment
+# Optimized Node.js options for multi-market deployment
 tap_node_options: "--max_old_space_size=4096"
 
 # Performance optimization

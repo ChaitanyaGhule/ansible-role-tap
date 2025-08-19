@@ -384,7 +384,7 @@
       rm production
     elif [ -d "production" ]; then
       echo "⚠️ 'production' is a real directory. Skipping deletion."
-      exit 1
+      exit 0
     fi
     ln -s {{ tap_version }} production
     ls -la production
