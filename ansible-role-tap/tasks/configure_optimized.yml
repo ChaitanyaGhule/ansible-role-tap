@@ -55,35 +55,32 @@
 #########################################
 # Ensure Directory Structure
 #########################################
-- name: Ensure TAP base directories exist
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: directory
-    mode: '0755'
-    owner: "{{ tap_file_owner }}"
-    group: "{{ tap_file_group }}"
+- name: Create TAP base directories with parent path handling
+  ansible.builtin.shell: |
+    mkdir -p "{{ item }}"
+    chown {{ tap_file_owner }}:{{ tap_file_group }} "{{ item }}"
+    chmod 755 "{{ item }}"
   become: true
   loop:
     - "{{ tap_backend_base_path }}"
     - "{{ tap_frontend_base_path }}"
+  changed_when: true
 
-- name: Ensure BackOffice directory exists
-  ansible.builtin.file:
-    path: "{{ tap_backend_path }}"
-    state: directory
-    mode: '0755'
-    owner: "{{ tap_file_owner }}"
-    group: "{{ tap_file_group }}"
+- name: Create BackOffice directory with proper permissions
+  ansible.builtin.shell: |
+    mkdir -p "{{ tap_backend_path }}"
+    chown {{ tap_file_owner }}:{{ tap_file_group }} "{{ tap_backend_path }}"
+    chmod 755 "{{ tap_backend_path }}"
   become: true
+  changed_when: true
 
-- name: Ensure Frontend directory exists
-  ansible.builtin.file:
-    path: "{{ tap_frontend_path }}"
-    state: directory
-    mode: '0755'
-    owner: "{{ tap_file_owner }}"
-    group: "{{ tap_file_group }}"
+- name: Create Frontend directory with proper permissions
+  ansible.builtin.shell: |
+    mkdir -p "{{ tap_frontend_path }}"
+    chown {{ tap_file_owner }}:{{ tap_file_group }} "{{ tap_frontend_path }}"
+    chmod 755 "{{ tap_frontend_path }}"
   become: true
+  changed_when: true
 
 #########################################
 # Backend Deployment (Optimized)
