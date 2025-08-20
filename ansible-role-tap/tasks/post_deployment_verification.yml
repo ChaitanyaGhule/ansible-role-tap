@@ -27,17 +27,17 @@
   failed_when: not version_check.stat.exists
 
 - name: Verify git repository status (backend)
-  ansible.builtin.shell: |
-    cd "{{ tap_backend_path }}"
-    git status --porcelain
+  ansible.builtin.command:
+    cmd: git status --porcelain
+    chdir: "{{ tap_backend_path }}"
   register: backend_git_status
   failed_when: false
   changed_when: false
 
 - name: Verify git repository status (frontend)
-  ansible.builtin.shell: |
-    cd "{{ tap_frontend_path }}"
-    git status --porcelain  
+  ansible.builtin.command:
+    cmd: git status --porcelain
+    chdir: "{{ tap_frontend_path }}"
   register: frontend_git_status
   failed_when: false
   changed_when: false

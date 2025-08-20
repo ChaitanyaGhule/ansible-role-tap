@@ -1,0 +1,25 @@
+---
+- name: Deploy TAP application
+  hosts: tap_servers
+  become: true
+  
+  pre_tasks:
+    - name: Install required collections
+      ansible.builtin.command:
+        cmd: ansible-galaxy collection install community.general
+      delegate_to: localhost
+      run_once: true
+      failed_when: false
+
+  roles:
+    - nespresso_ansible_role_tap
+
+  post_tasks:
+    - name: Display deployment summary
+      ansible.builtin.debug:
+        msg: |
+          TAP deployment completed successfully!
+          Markets deployed: {{ tap_markets | length }}
+          Version: {{ tap_version }}
+          Backend path: {{ tap_backend_base_path }}
+          Frontend path: {{ tap_frontend_base_path }}

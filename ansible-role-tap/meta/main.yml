@@ -1,0 +1,27 @@
+---
+galaxy_info:
+  author: TAP Development Team
+  description: Ansible role for deploying TAP (Nespresso) application across European markets
+  company: Nespresso
+  license: MIT
+  min_ansible_version: 2.9
+  platforms:
+    - name: EL
+      versions:
+        - 7
+        - 8
+    - name: RedHat
+      versions:
+        - 7
+        - 8
+  galaxy_tags:
+    - web
+    - php
+    - nodejs
+    - deployment
+    - nespresso
+
+dependencies: []
+
+collections:
+  - community.general

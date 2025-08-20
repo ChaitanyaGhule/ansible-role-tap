@@ -42,15 +42,43 @@
     - php-fpm
   failed_when: false
 
-- name: Aggressive disk cleanup (if needed)
-  ansible.builtin.shell: |
-    yum clean all
-    rm -rf /tmp/* /var/tmp/* /var/cache/*
-    find /var/log -name "*.log" -mtime +1 -delete
+- name: Clean YUM cache (if needed)
+  ansible.builtin.yum:
+    autoremove: true
   become: true
   when: "'9' in disk_check.stdout.split('%')[0][-2:] or '100%' in disk_check.stdout"
   failed_when: false
-  changed_when: true
+
+- name: Clean temporary directories (if needed)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  become: true
+  loop:
+    - "/tmp/*"
+    - "/var/tmp/*"
+    - "/var/cache/yum/*"
+  when: "'9' in disk_check.stdout.split('%')[0][-2:] or '100%' in disk_check.stdout"
+  failed_when: false
+
+- name: Clean old log files (if needed)
+  ansible.builtin.find:
+    paths: "/var/log"
+    patterns: "*.log"
+    age: "1d"
+    age_stamp: mtime
+  register: old_logs
+  become: true
+  when: "'9' in disk_check.stdout.split('%')[0][-2:] or '100%' in disk_check.stdout"
+
+- name: Remove old log files
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  become: true
+  loop: "{{ old_logs.files | default([]) }}"
+  when: "'9' in disk_check.stdout.split('%')[0][-2:] or '100%' in disk_check.stdout"
+  failed_when: false
 
 #########################################
 # Ensure Directory Structure
@@ -95,36 +123,28 @@
 #########################################
 # Backend Deployment (Optimized)
 #########################################
-- name: Check if backend deployment already exists
-  ansible.builtin.stat:
-    path: "{{ tap_backend_path }}/.git"
-  register: backend_git_exists
-
-- name: Initialize backend git repository if not exists
-  ansible.builtin.shell: |
-    cd {{ tap_backend_path }}
-    git init
-    git remote add origin {{ tap_backend_repo_url }}
+- name: Clone/update backend repository
+  ansible.builtin.git:
+    repo: "{{ tap_backend_repo_url }}"
+    dest: "{{ tap_backend_path }}"
+    version: "{{ tap_git_branch }}"
+    force: true
+    accept_hostkey: true
   become: true
-  when: not backend_git_exists.stat.exists
-  changed_when: true
-  failed_when: false
-
-- name: Git pull latest backend code (optimized)
-  ansible.builtin.shell: |
-    cd {{ tap_backend_path }}
-    export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-    timeout 180 git pull --no-edit origin {{ tap_git_branch }} || git fetch origin {{ tap_git_branch }} && git reset --hard origin/{{ tap_git_branch }}
-  become: true
-  changed_when: true
+  environment:
+    GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+  register: backend_git_result
   failed_when: false
 
 - name: Copy backend code from source (fallback)
-  ansible.builtin.shell: |
-    timeout 180 cp -r {{ tap_backend_source_path }}/* {{ tap_backend_path }}/
+  ansible.builtin.copy:
+    src: "{{ tap_backend_source_path }}/"
+    dest: "{{ tap_backend_path }}/"
+    remote_src: true
   become: true
-  when: tap_backend_source_path is defined
-  changed_when: true
+  when: 
+    - tap_backend_source_path is defined
+    - backend_git_result is failed
   failed_when: false
 
 #########################################
@@ -148,51 +168,46 @@
   become: true
 
 - name: OPTIMIZED Composer install with caching
-  ansible.builtin.shell: |
-    # Production: Use install only (respects composer.lock) + caching
-    # This reduces time from 20min to 2-3min with cache
-    export COMPOSER_CACHE_DIR={{ tap_composer_cache_dir }}
-    timeout 300 php composer.phar install \
-      --no-dev \
-      --optimize-autoloader \
-      --no-scripts \
-      --no-interaction \
-      --prefer-dist \
-      --apcu-autoloader \
-      --ignore-platform-reqs || echo "Composer install completed with warnings"
-  args:
-    chdir: "{{ tap_backend_path }}"
+  community.general.composer:
+    command: install
+    working_dir: "{{ tap_backend_path }}"
+    no_dev: true
+    optimize_autoloader: true
+    no_scripts: true
+    no_interaction: true
+    prefer_dist: true
+    apcu_autoloader: true
+    ignore_platform_reqs: true
   become: true
   when: composer_lock.stat.exists
+  environment:
+    COMPOSER_CACHE_DIR: "{{ tap_composer_cache_dir }}"
   register: composer_install_result
   failed_when: false
-  changed_when: true
 
 - name: Composer update (only if explicitly required)
-  ansible.builtin.shell: |
-    # WARNING: This takes 15+ minutes - only use if dependencies must be updated
-    export COMPOSER_CACHE_DIR={{ tap_composer_cache_dir }}
-    timeout 900 php composer.phar update \
-      --no-dev \
-      --optimize-autoloader \
-      --prefer-dist \
-      --no-interaction || echo "Composer update completed with warnings"
-  args:
-    chdir: "{{ tap_backend_path }}"
+  community.general.composer:
+    command: update
+    working_dir: "{{ tap_backend_path }}"
+    no_dev: true
+    optimize_autoloader: true
+    prefer_dist: true
+    no_interaction: true
   become: true
   when: tap_composer_force_update|default(false)
+  environment:
+    COMPOSER_CACHE_DIR: "{{ tap_composer_cache_dir }}"
   register: composer_update_result
   failed_when: false
-  changed_when: true
 
 - name: CRITICAL FIX - Generate autoload.php if missing
-  ansible.builtin.shell: |
-    php composer.phar dump-autoload --optimize --no-dev
-  args:
-    chdir: "{{ tap_backend_path }}"
+  community.general.composer:
+    command: dump-autoload
+    working_dir: "{{ tap_backend_path }}"
+    optimize_autoloader: true
+    no_dev: true
   become: true
   when: composer_lock.stat.exists
-  changed_when: true
   failed_when: false
 
 - name: Verify autoload.php exists (CRITICAL CHECK)
@@ -200,59 +215,63 @@
     path: "{{ tap_backend_path }}/vendor/autoload.php"
   register: autoload_check
 
-- name: Force create autoload if still missing
-  ansible.builtin.shell: |
-    mkdir -p vendor
-    echo "<?php // Minimal autoload for emergency" > vendor/autoload.php
-  args:
-    chdir: "{{ tap_backend_path }}"
+- name: Create vendor directory if missing
+  ansible.builtin.file:
+    path: "{{ tap_backend_path }}/vendor"
+    state: directory
+    mode: '0755'
   become: true
   when: not autoload_check.stat.exists
-  changed_when: true
 
-- name: Laravel artisan commands (with error handling)
-  ansible.builtin.shell: |
-    php artisan cache:clear || echo "Cache clear failed"
-    php artisan config:cache || echo "Config cache failed"
-  args:
+- name: Force create autoload if still missing
+  ansible.builtin.copy:
+    content: "<?php // Minimal autoload for emergency"
+    dest: "{{ tap_backend_path }}/vendor/autoload.php"
+    mode: '0644'
+  become: true
+  when: not autoload_check.stat.exists
+
+- name: Laravel artisan cache clear
+  ansible.builtin.command:
+    cmd: php artisan cache:clear
     chdir: "{{ tap_backend_path }}"
   become: true
-  changed_when: true
   failed_when: false
+  changed_when: true
+
+- name: Laravel artisan config cache
+  ansible.builtin.command:
+    cmd: php artisan config:cache
+    chdir: "{{ tap_backend_path }}"
+  become: true
+  failed_when: false
+  changed_when: true
 
 #########################################
 # Frontend Deployment (Optimized)
 #########################################
-- name: Check if frontend deployment already exists
-  ansible.builtin.stat:
-    path: "{{ tap_frontend_path }}/.git"
-  register: frontend_git_exists
-
-- name: Initialize frontend git repository if not exists
-  ansible.builtin.shell: |
-    cd {{ tap_frontend_path }}
-    git init
-    git remote add origin {{ tap_frontend_repo_url }}
+- name: Clone/update frontend repository
+  ansible.builtin.git:
+    repo: "{{ tap_frontend_repo_url }}"
+    dest: "{{ tap_frontend_path }}"
+    version: "{{ tap_git_branch }}"
+    force: true
+    accept_hostkey: true
   become: true
-  when: not frontend_git_exists.stat.exists
-  changed_when: true
-  failed_when: false
-
-- name: Git pull latest frontend code (optimized)
-  ansible.builtin.shell: |
-    cd {{ tap_frontend_path }}
-    export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-    timeout 180 git pull --no-edit origin {{ tap_git_branch }} || git fetch origin {{ tap_git_branch }} && git reset --hard origin/{{ tap_git_branch }}
-  become: true
-  changed_when: true
+  environment:
+    GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+  register: frontend_git_result
   failed_when: false
 
 - name: Copy frontend code from source (fallback)
-  ansible.builtin.shell: |
-    timeout 180 cp -r {{ tap_frontend_source_path }}/* {{ tap_frontend_path }}/
+  ansible.builtin.copy:
+    src: "{{ tap_frontend_source_path }}/"
+    dest: "{{ tap_frontend_path }}/"
+    remote_src: true
   become: true
-  when: tap_frontend_source_path is defined
-  changed_when: true
+  when: 
+    - tap_frontend_source_path is defined
+    - frontend_git_result is failed
   failed_when: false
 
 #########################################
@@ -265,28 +284,53 @@
     mode: '0755'
   become: true
 
-- name: Install npm dependencies with caching
-  ansible.builtin.shell: |
-    export NODE_OPTIONS="{{ tap_node_options }}"
-    export npm_config_cache={{ tap_npm_cache_dir }}
-    timeout 300 npm ci --silent --no-audit --no-fund --cache {{ tap_npm_cache_dir }} || timeout 300 npm install --silent --no-audit --no-fund --cache {{ tap_npm_cache_dir }}
-  args:
-    chdir: "{{ tap_frontend_path }}"
+- name: Install npm dependencies with caching (npm ci)
+  community.general.npm:
+    path: "{{ tap_frontend_path }}"
+    ci: true
+    no_optional: true
   become: true
+  environment:
+    NODE_OPTIONS: "{{ tap_node_options }}"
+    npm_config_cache: "{{ tap_npm_cache_dir }}"
+    npm_config_audit: "false"
+    npm_config_fund: "false"
+  register: npm_ci_result
+  failed_when: false
+
+- name: Install npm dependencies (fallback)
+  community.general.npm:
+    path: "{{ tap_frontend_path }}"
+    production: true
+  become: true
+  environment:
+    NODE_OPTIONS: "{{ tap_node_options }}"
+    npm_config_cache: "{{ tap_npm_cache_dir }}"
+    npm_config_audit: "false"
+    npm_config_fund: "false"
+  when: npm_ci_result is failed
   register: npm_install_result
   failed_when: false
-  changed_when: true
 
-- name: Build frontend (optimized)
-  ansible.builtin.shell: |
-    export NODE_OPTIONS="{{ tap_node_options }}"
-    timeout 300 npm run build --production || timeout 300 npm run pub --silent
-  args:
-    chdir: "{{ tap_frontend_path }}"
+- name: Build frontend (npm run build)
+  community.general.npm:
+    path: "{{ tap_frontend_path }}"
+    script: build
   become: true
+  environment:
+    NODE_OPTIONS: "{{ tap_node_options }}"
   register: npm_build_result
   failed_when: false
-  changed_when: true
+
+- name: Build frontend (fallback - npm run pub)
+  community.general.npm:
+    path: "{{ tap_frontend_path }}"
+    script: pub
+  become: true
+  environment:
+    NODE_OPTIONS: "{{ tap_node_options }}"
+  when: npm_build_result is failed
+  failed_when: false
 
 #########################################
 # Publish Frontend Version
@@ -298,17 +342,45 @@
     mode: '0755'
   become: true
 
-- name: Publish frontend version {{ tap_version }}
-  ansible.builtin.shell: |
-    cd {{ tap_frontend_path }}/dist
-    rm -f production
-    ln -s {{ tap_version }} production
-    # Ensure build artifacts exist
-    if [ ! "$(ls -A {{ tap_version }})" ]; then
-      echo "WARNING: Build directory is empty"
-      mkdir -p {{ tap_version }}/assets
-      echo "/* Emergency CSS */" > {{ tap_version }}/assets/app.css
-      echo "// Emergency JS" > {{ tap_version }}/assets/app.js
-    fi
+- name: Remove existing production symlink
+  ansible.builtin.file:
+    path: "{{ tap_frontend_path }}/dist/production"
+    state: absent
   become: true
-  changed_when: true
+
+- name: Create production symlink to version
+  ansible.builtin.file:
+    src: "{{ tap_version }}"
+    dest: "{{ tap_frontend_path }}/dist/production"
+    state: link
+  become: true
+
+- name: Check if build directory has content
+  ansible.builtin.find:
+    paths: "{{ tap_frontend_path }}/dist/{{ tap_version }}"
+  register: build_content
+  become: true
+
+- name: Create emergency assets directory
+  ansible.builtin.file:
+    path: "{{ tap_frontend_path }}/dist/{{ tap_version }}/assets"
+    state: directory
+    mode: '0755'
+  become: true
+  when: build_content.matched == 0
+
+- name: Create emergency CSS file
+  ansible.builtin.copy:
+    content: "/* Emergency CSS */"
+    dest: "{{ tap_frontend_path }}/dist/{{ tap_version }}/assets/app.css"
+    mode: '0644'
+  become: true
+  when: build_content.matched == 0
+
+- name: Create emergency JS file
+  ansible.builtin.copy:
+    content: "// Emergency JS"
+    dest: "{{ tap_frontend_path }}/dist/{{ tap_version }}/assets/app.js"
+    mode: '0644'
+  become: true
+  when: build_content.matched == 0

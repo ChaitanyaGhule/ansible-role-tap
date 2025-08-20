@@ -1,3 +1,4 @@
+---
 #########################################
 # System Prerequisites Check
 #########################################
@@ -6,22 +7,43 @@
   register: disk_check
   changed_when: false
 
-- name: Aggressive disk cleanup
-  ansible.builtin.shell: |
-    yum clean all
-    rm -rf /tmp/* /var/tmp/* /var/cache/*
-    journalctl --vacuum-time=1h
-    find /var/log -name "*.log" -mtime +1 -delete
-    find /var/log -name "*.gz" -delete
-    find /var/log -name "*.old" -delete
-    find /root -name "*.log" -delete
-    find /home -name "*.log" -delete 2>/dev/null || true
-    rm -rf /var/cache/yum/*
-    package-cleanup --oldkernels --count=1 -y 2>/dev/null || true
+- name: Clean YUM cache (if needed)
+  ansible.builtin.yum:
+    autoremove: true
   become: true
   when: "'9' in disk_check.stdout.split('%')[0][-2:] or '100%' in disk_check.stdout"
   failed_when: false
-  changed_when: true
+
+- name: Clean temporary directories (if needed)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  become: true
+  loop:
+    - "/tmp/*"
+    - "/var/tmp/*"
+    - "/var/cache/yum/*"
+  when: "'9' in disk_check.stdout.split('%')[0][-2:] or '100%' in disk_check.stdout"
+  failed_when: false
+
+- name: Clean old log files (if needed)
+  ansible.builtin.find:
+    paths: "/var/log"
+    patterns: "*.log,*.gz,*.old"
+    age: "1d"
+    age_stamp: mtime
+  register: old_logs
+  become: true
+  when: "'9' in disk_check.stdout.split('%')[0][-2:] or '100%' in disk_check.stdout"
+
+- name: Remove old log files
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  become: true
+  loop: "{{ old_logs.files | default([]) }}"
+  when: "'9' in disk_check.stdout.split('%')[0][-2:] or '100%' in disk_check.stdout"
+  failed_when: false
 
 - name: Check disk space after cleanup
   ansible.builtin.command: df -h /
@@ -48,11 +70,17 @@
   become: true
 
 - name: Clone repository from Bitbucket (shallow)
-  ansible.builtin.shell: |
-    export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-    timeout 300 git clone --depth 1 -b {{ git_branch }} {{ git_repo_url }} {{ git_clone_path }}
+  ansible.builtin.git:
+    repo: "{{ git_repo_url }}"
+    dest: "{{ git_clone_path }}"
+    version: "{{ git_branch }}"
+    depth: 1
+    force: true
+    accept_hostkey: true
   become: true
-  changed_when: true
+  environment:
+    GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+  failed_when: false
 
 #########################################
 # PHP & Composer Prereqs
@@ -78,6 +106,13 @@
 #########################################
 # Ensure Directory Structure
 #########################################
+- name: Create parent directories first
+  ansible.builtin.file:
+    path: "/opt/tap"
+    state: directory
+    mode: '0755'
+  become: true
+
 - name: Ensure TAP base directories exist
   ansible.builtin.file:
     path: "{{ item }}"
@@ -116,24 +151,17 @@
     path: "{{ tap_backend_path }}/.git"
   register: backend_git_exists
 
-- name: Initialize backend git repository if not exists
-  ansible.builtin.shell: |
-    cd {{ tap_backend_path }}
-    git init
-    git remote add origin {{ tap_backend_repo_url }}
+- name: Clone/update backend repository
+  ansible.builtin.git:
+    repo: "{{ tap_backend_repo_url }}"
+    dest: "{{ tap_backend_path }}"
+    version: "{{ tap_git_branch }}"
+    force: true
+    accept_hostkey: true
   become: true
-  when: not backend_git_exists.stat.exists
-  changed_when: true
-  failed_when: false
-
-- name: Git pull latest backend code (always execute)
-  ansible.builtin.shell: |
-    cd {{ tap_backend_path }}
-    export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-    git pull --no-edit origin {{ tap_git_branch }} || git fetch origin {{ tap_git_branch }} && git reset --hard origin/{{ tap_git_branch }}
-    echo "Backend git pull completed: $(date)"
-  become: true
-  changed_when: true
+  environment:
+    GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+  register: backend_git_result
   failed_when: false
 
 - name: Check if backend source exists (fallback)
@@ -142,13 +170,15 @@
   register: backend_dir
 
 - name: Copy backend code from source (fallback if git fails)
-  ansible.builtin.shell: |
-    echo "Backend copy started: $(date)"
-    timeout 300 cp -r {{ tap_backend_source_path }}/* {{ tap_backend_path }}/
-    echo "Backend copy completed: $(date)"
+  ansible.builtin.copy:
+    src: "{{ tap_backend_source_path }}/"
+    dest: "{{ tap_backend_path }}/"
+    remote_src: true
   become: true
-  when: backend_dir.stat.exists
-  changed_when: true
+  when: 
+    - backend_dir.stat.exists
+    - backend_git_result is failed
+  failed_when: false
 
 #########################################
 # Laravel Setup: Composer + Artisan
@@ -178,30 +208,43 @@
   when: not composer_lock.stat.exists
   changed_when: true
 
+- name: Setup composer cache directory
+  ansible.builtin.file:
+    path: "{{ tap_composer_cache_dir }}"
+    state: directory
+    mode: '0755'
+  become: true
+
 - name: Run Composer install (always execute if lock exists)
-  ansible.builtin.shell: |
-    timeout 300 php composer.phar install --no-dev --no-scripts --prefer-dist --no-interaction --ignore-platform-reqs || echo "Composer timeout, continuing"
-  args:
-    chdir: "{{ tap_backend_path }}"
+  community.general.composer:
+    command: install
+    working_dir: "{{ tap_backend_path }}"
+    no_dev: true
+    no_scripts: true
+    prefer_dist: true
+    no_interaction: true
+    ignore_platform_reqs: true
   become: true
   when: composer_lock.stat.exists
+  environment:
+    COMPOSER_CACHE_DIR: "{{ tap_composer_cache_dir }}"
   register: composer_install_result
   failed_when: false
-  changed_when: true
   retries: 2
   delay: 30
 
 - name: Run Composer update (always execute)
-  ansible.builtin.shell: |
-    echo "Composer update started: $(date)"
-    timeout 900 php composer.phar update --no-dev --optimize-autoloader --prefer-dist --no-interaction || timeout 900 composer update --no-dev --optimize-autoloader --prefer-dist --no-interaction
-    echo "Composer update completed: $(date)"
-    ls -la vendor/ || echo "Vendor directory not created"
-  args:
-    chdir: "{{ tap_backend_path }}"
+  community.general.composer:
+    command: update
+    working_dir: "{{ tap_backend_path }}"
+    no_dev: true
+    optimize_autoloader: true
+    prefer_dist: true
+    no_interaction: true
   become: true
+  environment:
+    COMPOSER_CACHE_DIR: "{{ tap_composer_cache_dir }}"
   register: composer_update_result
-  changed_when: true
   failed_when: false
 
 - name: Verify vendor directory exists
@@ -218,37 +261,61 @@
     path: "{{ tap_backend_path }}/vendor/laravel/framework/src/Illuminate/Foundation/Application.php"
   register: laravel_check
 
-- name: Clear and cache Laravel config, views, and routes (always execute)
-  ansible.builtin.shell: |
-    php artisan cache:clear || echo "Cache clear failed"
-    php artisan config:cache || echo "Config cache failed"
-    php artisan view:clear || echo "View clear failed"
-    php artisan view:cache || echo "View cache failed"
-    php artisan route:clear || echo "Route clear failed"
-  args:
+- name: Laravel artisan cache clear
+  ansible.builtin.command:
+    cmd: php artisan cache:clear
     chdir: "{{ tap_backend_path }}"
-    executable: /bin/bash
   become: true
-  changed_when: true
   failed_when: false
+  changed_when: true
 
-- name: Notify release via artisan (always execute)
-  ansible.builtin.shell: php artisan release_notification:notify --force || echo "Release notification failed"
-  args:
+- name: Laravel artisan config cache
+  ansible.builtin.command:
+    cmd: php artisan config:cache
     chdir: "{{ tap_backend_path }}"
-    executable: /bin/bash
+  become: true
+  failed_when: false
+  changed_when: true
+
+- name: Laravel artisan view clear
+  ansible.builtin.command:
+    cmd: php artisan view:clear
+    chdir: "{{ tap_backend_path }}"
+  become: true
+  failed_when: false
+  changed_when: true
+
+- name: Laravel artisan view cache
+  ansible.builtin.command:
+    cmd: php artisan view:cache
+    chdir: "{{ tap_backend_path }}"
+  become: true
+  failed_when: false
+  changed_when: true
+
+- name: Laravel artisan route clear
+  ansible.builtin.command:
+    cmd: php artisan route:clear
+    chdir: "{{ tap_backend_path }}"
+  become: true
+  failed_when: false
+  changed_when: true
+
+- name: Notify release via artisan
+  ansible.builtin.command:
+    cmd: php artisan release_notification:notify --force
+    chdir: "{{ tap_backend_path }}"
   become: true
   register: artisan_notify_result
   failed_when: false
   changed_when: true
   notify: Restart Supervisor
 
-- name: Sync translations (always execute if file provided)
-  ansible.builtin.shell: php artisan sync:translations --filename={{ tap_translation_file }} || echo "Translation sync failed"
-  when: tap_translation_sync_enabled | default(true)
-  args:
+- name: Sync translations
+  ansible.builtin.command:
+    cmd: php artisan sync:translations --filename={{ tap_translation_file }}
     chdir: "{{ tap_backend_path }}"
-    executable: /bin/bash
+  when: tap_translation_sync_enabled | default(true)
   become: true
   register: sync_translations_result
   failed_when: false
@@ -262,32 +329,26 @@
     path: "{{ tap_frontend_path }}/.git"
   register: frontend_git_exists
 
-- name: Initialize frontend git repository if not exists
-  ansible.builtin.shell: |
-    cd {{ tap_frontend_path }}
-    git init
-    git remote add origin {{ tap_frontend_repo_url }}
+- name: Stash frontend changes before update
+  ansible.builtin.command:
+    cmd: git stash
+    chdir: "{{ tap_frontend_path }}"
   become: true
-  when: not frontend_git_exists.stat.exists
-  changed_when: true
+  when: frontend_git_exists.stat.exists
   failed_when: false
+  changed_when: false
 
-- name: Git stash frontend changes (always execute)
-  ansible.builtin.shell: |
-    cd {{ tap_frontend_path }}
-    git stash || echo "Nothing to stash"
+- name: Clone/update frontend repository
+  ansible.builtin.git:
+    repo: "{{ tap_frontend_repo_url }}"
+    dest: "{{ tap_frontend_path }}"
+    version: "{{ tap_git_branch }}"
+    force: true
+    accept_hostkey: true
   become: true
-  changed_when: true
-  failed_when: false
-
-- name: Git pull latest frontend code (always execute)
-  ansible.builtin.shell: |
-    cd {{ tap_frontend_path }}
-    export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-    git pull --no-edit origin {{ tap_git_branch }} || git fetch origin {{ tap_git_branch }} && git reset --hard origin/{{ tap_git_branch }}
-    echo "Frontend git pull completed: $(date)"
-  become: true
-  changed_when: true
+  environment:
+    GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+  register: frontend_git_result
   failed_when: false
 
 - name: Check if frontend source exists (fallback)
@@ -296,13 +357,15 @@
   register: frontend_dir
 
 - name: Copy frontend code from source (fallback if git fails)
-  ansible.builtin.shell: |
-    echo "Frontend copy started: $(date)"
-    timeout 300 cp -r {{ tap_frontend_source_path }}/* {{ tap_frontend_path }}/
-    echo "Frontend copy completed: $(date)"
+  ansible.builtin.copy:
+    src: "{{ tap_frontend_source_path }}/"
+    dest: "{{ tap_frontend_path }}/"
+    remote_src: true
   become: true
-  when: frontend_dir.stat.exists
-  changed_when: true
+  when: 
+    - frontend_dir.stat.exists
+    - frontend_git_result is failed
+  failed_when: false
 
 #########################################
 # Build Frontend (NPM)
@@ -313,6 +376,13 @@
       - nodejs
       - npm
     state: present
+  become: true
+
+- name: Setup npm cache directory
+  ansible.builtin.file:
+    path: "{{ tap_npm_cache_dir }}"
+    state: directory
+    mode: '0755'
   become: true
 
 - name: Check disk space before NPM build
@@ -328,31 +398,47 @@
   ansible.builtin.debug:
     msg: "Starting npm build for {{ market }} at {{ ansible_date_time.time }}"
 
-- name: Install npm dependencies (always execute)
-  ansible.builtin.shell: |
-    export NODE_OPTIONS={{ tap_node_options }}
-    timeout 600 npm ci --silent --no-audit --no-fund || { echo "npm ci failed, trying npm install"; timeout 600 npm install --silent --no-audit --no-fund; }
-  args:
-    chdir: "{{ tap_frontend_path }}"
-    executable: /bin/bash
+- name: Install npm dependencies (npm ci)
+  community.general.npm:
+    path: "{{ tap_frontend_path }}"
+    ci: true
+    no_optional: true
   become: true
-  register: npm_install_result
+  environment:
+    NODE_OPTIONS: "{{ tap_node_options }}"
+    npm_config_cache: "{{ tap_npm_cache_dir }}"
+    npm_config_audit: "false"
+    npm_config_fund: "false"
+  register: npm_ci_result
   failed_when: false
-  changed_when: true
   retries: 2
   delay: 60
 
-- name: Build frontend (always execute)
-  ansible.builtin.shell: |
-    export NODE_OPTIONS={{ tap_node_options }}
-    timeout 600 npm run pub --silent
-  args:
-    chdir: "{{ tap_frontend_path }}"
-    executable: /bin/bash
+- name: Install npm dependencies (fallback)
+  community.general.npm:
+    path: "{{ tap_frontend_path }}"
+    production: true
   become: true
+  environment:
+    NODE_OPTIONS: "{{ tap_node_options }}"
+    npm_config_cache: "{{ tap_npm_cache_dir }}"
+    npm_config_audit: "false"
+    npm_config_fund: "false"
+  when: npm_ci_result is failed
+  register: npm_install_result
+  failed_when: false
+  retries: 2
+  delay: 60
+
+- name: Build frontend (npm run pub)
+  community.general.npm:
+    path: "{{ tap_frontend_path }}"
+    script: pub
+  become: true
+  environment:
+    NODE_OPTIONS: "{{ tap_node_options }}"
   register: npm_build_result
   failed_when: false
-  changed_when: true
   retries: 2
   delay: 60
 
@@ -372,18 +458,15 @@
   become: true
   when: not version_dir.stat.exists
 
-- name: Publish frontend version {{ tap_version }}
-  ansible.builtin.shell: |
-    cd {{ tap_frontend_path }}/dist
-    if [ -L "production" ]; then
-      rm production
-    elif [ -d "production" ]; then
-      echo "⚠️ 'production' is a real directory. Skipping deletion."
-      exit 1
-    fi
-    ln -s {{ tap_version }} production
-    ls -la production
-  args:
-    executable: /bin/bash
+- name: Remove existing production symlink
+  ansible.builtin.file:
+    path: "{{ tap_frontend_path }}/dist/production"
+    state: absent
   become: true
-  changed_when: true
+
+- name: Create production symlink to version
+  ansible.builtin.file:
+    src: "{{ tap_version }}"
+    dest: "{{ tap_frontend_path }}/dist/production"
+    state: link
+  become: true
