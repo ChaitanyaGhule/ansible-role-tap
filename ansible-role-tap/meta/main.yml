@@ -14,7 +14,7 @@ galaxy_info:
         - "9"
     - name: RedHat
       versions:
-        - "9"
+        - "all"
   galaxy_tags:
     - web
     - php
