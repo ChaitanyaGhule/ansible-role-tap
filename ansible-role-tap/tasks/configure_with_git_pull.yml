@@ -173,6 +173,7 @@
     src: "{{ tap_backend_source_path }}/"
     dest: "{{ tap_backend_path }}/"
     remote_src: true
+    mode: preserve
   become: true
   when: 
     - backend_dir.stat.exists
@@ -221,7 +222,6 @@
     no_dev: true
     no_scripts: true
     prefer_dist: true
-    no_interaction: true
     ignore_platform_reqs: true
   become: true
   when: composer_lock.stat.exists
@@ -239,7 +239,6 @@
     no_dev: true
     optimize_autoloader: true
     prefer_dist: true
-    no_interaction: true
   become: true
   environment:
     COMPOSER_CACHE_DIR: "{{ tap_composer_cache_dir }}"
@@ -360,6 +359,7 @@
     src: "{{ tap_frontend_source_path }}/"
     dest: "{{ tap_frontend_path }}/"
     remote_src: true
+    mode: preserve
   become: true
   when: 
     - frontend_dir.stat.exists
@@ -430,9 +430,9 @@
   delay: 60
 
 - name: Build frontend (npm run pub)
-  community.general.npm:
-    path: "{{ tap_frontend_path }}"
-    script: pub
+  ansible.builtin.command:
+    cmd: npm run pub
+    chdir: "{{ tap_frontend_path }}"
   become: true
   environment:
     NODE_OPTIONS: "{{ tap_node_options }}"

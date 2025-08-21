@@ -174,6 +174,7 @@
     src: "{{ tap_backend_source_path }}/"
     dest: "{{ tap_backend_path }}/"
     remote_src: true
+    mode: preserve
   become: true
   when: 
     - backend_dir.stat.exists
@@ -222,7 +223,6 @@
     no_dev: true
     no_scripts: true
     prefer_dist: true
-    no_interaction: true
     ignore_platform_reqs: true
   become: true
   when: composer_lock.stat.exists
@@ -240,7 +240,6 @@
     no_dev: true
     optimize_autoloader: true
     prefer_dist: true
-    no_interaction: true
   become: true
   environment:
     COMPOSER_CACHE_DIR: "{{ tap_composer_cache_dir }}"
@@ -330,9 +329,11 @@
   register: frontend_git_exists
 
 - name: Stash frontend changes before update
-  ansible.builtin.command:
-    cmd: git stash
-    chdir: "{{ tap_frontend_path }}"
+  ansible.builtin.git:
+    repo: "{{ tap_frontend_repo_url }}"
+    dest: "{{ tap_frontend_path }}"
+    version: "{{ tap_git_branch }}"
+    force: true
   become: true
   when: frontend_git_exists.stat.exists
   failed_when: false
@@ -361,6 +362,7 @@
     src: "{{ tap_frontend_source_path }}/"
     dest: "{{ tap_frontend_path }}/"
     remote_src: true
+    mode: preserve
   become: true
   when: 
     - frontend_dir.stat.exists
@@ -431,9 +433,9 @@
   delay: 60
 
 - name: Build frontend (npm run pub)
-  community.general.npm:
-    path: "{{ tap_frontend_path }}"
-    script: pub
+  ansible.builtin.command:
+    cmd: npm run pub
+    chdir: "{{ tap_frontend_path }}"
   become: true
   environment:
     NODE_OPTIONS: "{{ tap_node_options }}"

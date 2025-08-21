@@ -141,6 +141,7 @@
     src: "{{ tap_backend_source_path }}/"
     dest: "{{ tap_backend_path }}/"
     remote_src: true
+    mode: preserve
   become: true
   when: 
     - tap_backend_source_path is defined
@@ -174,7 +175,6 @@
     no_dev: true
     optimize_autoloader: true
     no_scripts: true
-    no_interaction: true
     prefer_dist: true
     apcu_autoloader: true
     ignore_platform_reqs: true
@@ -192,7 +192,6 @@
     no_dev: true
     optimize_autoloader: true
     prefer_dist: true
-    no_interaction: true
   become: true
   when: tap_composer_force_update|default(false)
   environment:
@@ -276,6 +275,7 @@
     src: "{{ tap_frontend_source_path }}/"
     dest: "{{ tap_frontend_path }}/"
     remote_src: true
+    mode: preserve
   become: true
   when: 
     - tap_frontend_source_path is defined
@@ -321,9 +321,9 @@
   failed_when: false
 
 - name: Build frontend (npm run build)
-  community.general.npm:
-    path: "{{ tap_frontend_path }}"
-    script: build
+  ansible.builtin.command:
+    cmd: npm run build
+    chdir: "{{ tap_frontend_path }}"
   become: true
   environment:
     NODE_OPTIONS: "{{ tap_node_options }}"
@@ -331,9 +331,9 @@
   failed_when: false
 
 - name: Build frontend (fallback - npm run pub)
-  community.general.npm:
-    path: "{{ tap_frontend_path }}"
-    script: pub
+  ansible.builtin.command:
+    cmd: npm run pub
+    chdir: "{{ tap_frontend_path }}"
   become: true
   environment:
     NODE_OPTIONS: "{{ tap_node_options }}"
