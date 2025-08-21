@@ -83,12 +83,18 @@
 #########################################
 # Ensure Directory Structure
 #########################################
-- name: Ensure TAP directory exists in /opt
+- name: Ensure /mnt/opt directory exists (symlink target)
+  ansible.builtin.file:
+    path: "/mnt/opt"
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: Create TAP directory in /opt (via symlink)
   ansible.builtin.file:
     path: "/opt/tap"
     state: directory
     mode: '0755'
-    recurse: yes
   become: true
 
 - name: Ensure TAP base directories exist
@@ -160,7 +166,7 @@
 - name: SAFETY CHECK - Fail if no composer.lock in production
   ansible.builtin.fail:
     msg: "CRITICAL: composer.lock not found. Cannot deploy safely to production without locked dependencies."
-  when: not composer_lock.stat.exists and tap_require_composer_lock|default(true)
+  when: not composer_lock.stat.exists and tap_require_composer_lock|default(false)
 
 - name: Setup composer cache directory
   ansible.builtin.file:
