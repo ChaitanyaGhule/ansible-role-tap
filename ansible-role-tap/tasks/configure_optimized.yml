@@ -83,7 +83,7 @@
 #########################################
 # Ensure Directory Structure
 #########################################
-- name: Create parent directories first
+- name: Ensure TAP directory exists in /opt
   ansible.builtin.file:
     path: "/opt/tap"
     state: directory
