@@ -1,5 +1,7 @@
 ---
 galaxy_info:
+  role_name: nespresso_ansible_role_tap
+  namespace: nespresso
   author: TAP Development Team
   description: Ansible role for deploying TAP (Nespresso) application across European markets
   company: Nespresso
