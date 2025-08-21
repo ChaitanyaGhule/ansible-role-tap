@@ -88,6 +88,7 @@
     path: "/opt/tap"
     state: directory
     mode: '0755'
+    recurse: yes
   become: true
 
 - name: Ensure TAP base directories exist
