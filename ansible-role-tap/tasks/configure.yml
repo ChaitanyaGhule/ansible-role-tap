@@ -419,6 +419,7 @@
   ansible.builtin.command:
     cmd: npm run pub
     chdir: "{{ tap_frontend_path }}"
+  changed_when: true
   become: true
   environment:
     NODE_OPTIONS: "{{ tap_node_options }}"
