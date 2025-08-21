@@ -7,11 +7,15 @@
   register: disk_check
   changed_when: false
 
+- name: Set disk space critical flag
+  ansible.builtin.set_fact:
+    disk_space_critical: "{{ (disk_check.stdout | regex_search('(\\d+)%') | int) >= 90 }}"
+
 - name: Clean YUM cache (if needed)
   ansible.builtin.yum:
     autoremove: true
   become: true
-  when: "'9' in disk_check.stdout.split('%')[0][-2:] or '100%' in disk_check.stdout"
+  when: disk_space_critical | bool
   failed_when: false
 
 - name: Clean temporary directories (if needed)
@@ -23,7 +27,7 @@
     - "/tmp/*"
     - "/var/tmp/*"
     - "/var/cache/yum/*"
-  when: "'9' in disk_check.stdout.split('%')[0][-2:] or '100%' in disk_check.stdout"
+  when: disk_space_critical | bool
   failed_when: false
 
 - name: Clean old log files (if needed)
@@ -34,7 +38,7 @@
     age_stamp: mtime
   register: old_logs
   become: true
-  when: "'9' in disk_check.stdout.split('%')[0][-2:] or '100%' in disk_check.stdout"
+  when: disk_space_critical | bool
 
 - name: Remove old log files
   ansible.builtin.file:
@@ -42,7 +46,7 @@
     state: absent
   become: true
   loop: "{{ old_logs.files | default([]) }}"
-  when: "'9' in disk_check.stdout.split('%')[0][-2:] or '100%' in disk_check.stdout"
+  when: disk_space_critical | bool
   failed_when: false
 
 - name: Check disk space after cleanup

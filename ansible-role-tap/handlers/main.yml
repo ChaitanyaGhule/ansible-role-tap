@@ -6,4 +6,5 @@
     name: supervisord
     state: restarted
   become: true
-  failed_when: false
+  register: supervisor_restart
+  failed_when: supervisor_restart.failed and 'not found' not in supervisor_restart.msg

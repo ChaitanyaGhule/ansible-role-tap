@@ -1,0 +1,262 @@
+---
+# TAP Production Deployment Playbook
+# Deploys TAP application across all 17 markets
+# This is the ONLY playbook to be used for TAP deployments as per Ansible team guidelines
+
+- name: Deploy TAP Application Production All 17 Markets
+  hosts: tap
+  become: true
+  gather_facts: true
+  serial: 3
+  max_fail_percentage: 10
+
+  pre_tasks:
+    - name: Install required collections
+      ansible.builtin.command:
+        cmd: ansible-galaxy collection install community.general
+      delegate_to: localhost
+      run_once: true
+      register: collection_install
+      failed_when: collection_install.rc != 0 and 'already installed' not in collection_install.stderr
+
+    - name: tap_production | Create deployment log file
+      ansible.builtin.file:
+        path: "/var/log/tap_deployment_{{ ansible_date_time.epoch }}.log"
+        state: touch
+        mode: '0644'
+      delegate_to: localhost
+      when: inventory_hostname == ansible_play_hosts[0]
+
+    - name: tap_production | Log deployment start
+      ansible.builtin.lineinfile:
+        path: "/var/log/tap_deployment_{{ ansible_date_time.epoch }}.log"
+        line: "[{{ ansible_date_time.iso8601 }}] TAP Production Deployment Started"
+      delegate_to: localhost
+      when: inventory_hostname == ansible_play_hosts[0]
+
+    - name: tap_production | Get system information for health check
+      ansible.builtin.setup:
+        filter:
+          - ansible_mounts
+          - ansible_memory_mb
+          - ansible_loadavg
+          - ansible_hostname
+
+    - name: tap_production | Calculate available disk space
+      ansible.builtin.set_fact:
+        tap_root_mount: "{{ ansible_mounts | selectattr('mount', 'equalto', '/') | list | first | default({}) }}"
+        tap_available_space_gb: "{{ ((ansible_mounts | selectattr('mount', 'equalto', '/') | list | first | default({})).size_available | default(0)) / 1024 / 1024 / 1024 }}"
+
+    - name: tap_production | Display pre deployment system health
+      ansible.builtin.debug:
+        msg:
+          - "PRE-DEPLOYMENT SYSTEM HEALTH CHECK"
+          - "Timestamp: {{ ansible_date_time.iso8601 }}"
+          - "Hostname: {{ ansible_hostname }}"
+          - "Root filesystem: {{ tap_root_mount.size_total / 1024 / 1024 / 1024 | round(2) }}GB total"
+          - "Available space: {{ tap_available_space_gb | round(2) }}GB"
+          - "Total Memory: {{ ansible_memory_mb.real.total }}MB"
+          - "Available Memory: {{ ansible_memory_mb.real.free }}MB"
+          - "Load Average: {{ ansible_loadavg['1m'] }} {{ ansible_loadavg['5m'] }} {{ ansible_loadavg['15m'] }}"
+
+    - name: tap_production | Set insufficient space flag
+      ansible.builtin.set_fact:
+        tap_insufficient_space: "{{ tap_available_space_gb | float < 1.0 }}"
+
+    - name: tap_production | Fail if insufficient disk space
+      ansible.builtin.fail:
+        msg: "Insufficient disk space for deployment. Available: {{ tap_available_space_gb | round(2) }}GB. Minimum required: 1GB"
+      when: tap_insufficient_space | bool
+
+    - name: tap_production | Clean YUM cache
+      ansible.builtin.yum:
+        name: '*'
+        state: present
+        update_cache: true
+        clean: true
+      become: true
+      failed_when: false
+
+    - name: tap_production | Find temporary files for cleanup
+      ansible.builtin.find:
+        paths:
+          - /tmp
+          - /var/tmp
+          - /var/cache/yum
+        patterns:
+          - "*.tmp"
+          - "*.cache"
+          - "ansible-*"
+        file_type: any
+      register: tap_temp_files
+      become: true
+      failed_when: false
+
+    - name: tap_production | Remove temporary files
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ tap_temp_files.files }}"
+      become: true
+      failed_when: false
+
+    - name: tap_production | Find old log files
+      ansible.builtin.find:
+        paths:
+          - /var/log
+        patterns:
+          - "*.log"
+          - "*.gz"
+          - "*.old"
+        age: 1d
+        recurse: true
+      register: tap_old_logs
+      become: true
+      failed_when: false
+
+    - name: tap_production | Remove old log files
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ tap_old_logs.files }}"
+      become: true
+      failed_when: false
+
+    - name: tap_production | Verify required services are running
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: started
+      loop:
+        - nginx
+        - php-fpm
+      ignore_errors: true
+      register: tap_service_check
+
+    - name: tap_production | Display service status
+      ansible.builtin.debug:
+        msg: "Service {{ item.item }} status: {{ 'Running' if item.state == 'started' else 'Not Running' }}"
+      loop: "{{ tap_service_check.results }}"
+      when: tap_service_check is defined
+
+  roles:
+    - nespresso_ansible_role_tap
+
+  post_tasks:
+    - name: tap_production | Get post deployment system information
+      ansible.builtin.setup:
+        filter:
+          - ansible_mounts
+          - ansible_memory_mb
+          - ansible_loadavg
+
+    - name: tap_production | Find backend market deployments
+      ansible.builtin.find:
+        paths: /v2-markets
+        patterns: "prod_*"
+        file_type: directory
+      register: tap_backend_markets
+      failed_when: false
+
+    - name: tap_production | Find frontend market deployments
+      ansible.builtin.find:
+        paths: /www
+        patterns: "prod_*"
+        file_type: directory
+      register: tap_frontend_markets
+      failed_when: false
+
+    - name: tap_production | Verify backend production directories
+      ansible.builtin.stat:
+        path: "{{ item.path }}/server/production"
+      register: tap_backend_production_dirs
+      loop: "{{ tap_backend_markets.files }}"
+      when: tap_backend_markets.files is defined
+
+    - name: tap_production | Verify frontend production symlinks
+      ansible.builtin.stat:
+        path: "{{ item.path }}/nespresso_ev2-client/dist/production"
+      register: tap_frontend_production_links
+      loop: "{{ tap_frontend_markets.files }}"
+      when: tap_frontend_markets.files is defined
+
+    - name: tap_production | Calculate deployment statistics
+      ansible.builtin.set_fact:
+        tap_backend_count: "{{ tap_backend_markets.matched | default(0) }}"
+        tap_frontend_count: "{{ tap_frontend_markets.matched | default(0) }}"
+        tap_final_available_space: "{{ tap_available_space_gb }}"
+        tap_deployment_successful: "{{ (tap_backend_markets.matched | default(0)) == 17 and (tap_frontend_markets.matched | default(0)) == 17 }}"
+
+    - name: tap_production | Display post deployment summary
+      ansible.builtin.debug:
+        msg:
+          - "POST-DEPLOYMENT SYSTEM STATUS"
+          - "Timestamp: {{ ansible_date_time.iso8601 }}"
+          - "Available space: {{ tap_final_available_space | round(2) }}GB"
+          - "Available Memory: {{ ansible_memory_mb.real.free }}MB"
+          - "Load Average: {{ ansible_loadavg['1m'] }} {{ ansible_loadavg['5m'] }} {{ ansible_loadavg['15m'] }}"
+          - "Backend markets deployed: {{ tap_backend_count }}"
+          - "Frontend markets deployed: {{ tap_frontend_count }}"
+          - "{{ 'SUCCESS: All 17 markets deployed successfully' if tap_deployment_successful else 'WARNING: Expected 17 markets, found Backend: ' + tap_backend_count | string + ', Frontend: ' + tap_frontend_count | string }}"
+
+    - name: tap_production | Log deployment completion
+      ansible.builtin.lineinfile:
+        path: "/var/log/tap_deployment_{{ ansible_date_time.epoch }}.log"
+        line: "[{{ ansible_date_time.iso8601 }}] TAP Production Deployment {{ 'COMPLETED SUCCESSFULLY' if tap_deployment_successful else 'COMPLETED WITH WARNINGS' }}"
+      delegate_to: localhost
+      when: inventory_hostname == ansible_play_hosts[0]
+
+    - name: tap_production | Clean up git clone directory
+      ansible.builtin.file:
+        path: /mnt/git_clone
+        state: absent
+      become: true
+      failed_when: false
+
+    - name: tap_production | Find npm cache directories
+      ansible.builtin.find:
+        paths: /mnt
+        patterns: "npm-cache-*"
+        file_type: directory
+      register: tap_npm_cache_dirs
+      become: true
+      failed_when: false
+
+    - name: tap_production | Remove npm cache directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ tap_npm_cache_dirs.files }}"
+      become: true
+      failed_when: false
+
+    - name: tap_production | Find ansible temporary files
+      ansible.builtin.find:
+        paths: /tmp
+        patterns: "ansible-*"
+        file_type: any
+      register: tap_ansible_temp_files
+      become: true
+      failed_when: false
+
+    - name: tap_production | Remove ansible temporary files
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ tap_ansible_temp_files.files }}"
+      become: true
+      failed_when: false
+
+    - name: tap_production | Send deployment notification
+      ansible.builtin.debug:
+        msg:
+          - "TAP PRODUCTION DEPLOYMENT SUMMARY"
+          - "Status: {{ 'SUCCESS' if tap_deployment_successful else 'COMPLETED WITH WARNINGS' }}"
+          - "Timestamp: {{ ansible_date_time.iso8601 }}"
+          - "Markets: All 17 production markets"
+      tags: notification
+
+    - name: tap_production | Fail playbook if deployment was not successful
+      ansible.builtin.fail:
+        msg: "TAP deployment completed with warnings. Please check the logs and verify all 17 markets are properly deployed."
+      when: not tap_deployment_successful | bool
+      tags: validation

@@ -225,7 +225,15 @@
 
 - name: Force create autoload if still missing
   ansible.builtin.copy:
-    content: "<?php // Minimal autoload for emergency"
+    content: |
+      <?php
+      // Emergency autoload.php
+      spl_autoload_register(function ($class) {
+          $file = __DIR__ . '/' . str_replace('\\', '/', $class) . '.php';
+          if (file_exists($file)) {
+              require $file;
+          }
+      });
     dest: "{{ tap_backend_path }}/vendor/autoload.php"
     mode: '0644'
   become: true

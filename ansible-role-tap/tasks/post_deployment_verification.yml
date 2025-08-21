@@ -59,5 +59,5 @@
       Frontend Directory: {{ 'OK' if frontend_dir_check.stat.exists else 'MISSING' }}
       Composer Autoload: {{ 'OK' if autoload_check.stat.exists else 'MISSING' }}
       Version {{ tap_version }}: {{ 'OK' if version_check.stat.exists else 'MISSING' }}
-      Apache Service: {{ (service_status.results | selectattr('item', 'equalto', 'httpd') | first).status.ActiveState | default('Unknown') }}
-      PHP-FPM Service: {{ (service_status.results | selectattr('item', 'equalto', 'php-fpm') | first).status.ActiveState | default('Unknown') }}
+      Apache Service: {{ (service_status.results | selectattr('item', 'equalto', 'httpd') | list | first | default({})).status.ActiveState | default('Unknown') }}
+      PHP-FPM Service: {{ (service_status.results | selectattr('item', 'equalto', 'php-fpm') | list | first | default({})).status.ActiveState | default('Unknown') }}
