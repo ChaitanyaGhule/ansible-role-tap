@@ -11,14 +11,6 @@
   max_fail_percentage: 10
 
   pre_tasks:
-    - name: Install required collections
-      ansible.builtin.command:
-        cmd: ansible-galaxy collection install community.general
-      delegate_to: localhost
-      run_once: true
-      register: collection_install
-      failed_when: collection_install.rc != 0 and 'already installed' not in collection_install.stderr
-
     - name: tap_production | Create deployment log file
       ansible.builtin.file:
         path: "/var/log/tap_deployment_{{ ansible_date_time.epoch }}.log"
