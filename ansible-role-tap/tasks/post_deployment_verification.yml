@@ -47,7 +47,7 @@
   loop:
     - httpd
     - php-fpm
-  failed_when: false
+  ignore_errors: true
 
 - name: Display verification summary
   ansible.builtin.debug:

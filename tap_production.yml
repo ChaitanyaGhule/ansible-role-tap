@@ -45,7 +45,7 @@
           - "PRE-DEPLOYMENT SYSTEM HEALTH CHECK"
           - "Timestamp: {{ ansible_date_time.iso8601 }}"
           - "Hostname: {{ ansible_hostname }}"
-          - "Root filesystem: {{ tap_root_mount.size_total / 1024 / 1024 / 1024 | round(2) }}GB total"
+          - "Root filesystem: {{ (tap_root_mount.size_total | default(0)) / 1024 / 1024 / 1024 | round(2) }}GB total"
           - "Available space: {{ tap_available_space_gb | round(2) }}GB"
           - "Total Memory: {{ ansible_memory_mb.real.total }}MB"
           - "Available Memory: {{ ansible_memory_mb.real.free }}MB"
