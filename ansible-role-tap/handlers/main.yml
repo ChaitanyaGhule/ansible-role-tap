@@ -7,4 +7,4 @@
     state: restarted
   become: true
   register: supervisor_restart
-  failed_when: supervisor_restart.failed and 'not found' in supervisor_restart.msg
+  failed_when: supervisor_restart.failed and supervisor_restart.msg is defined and 'not found' in supervisor_restart.msg
