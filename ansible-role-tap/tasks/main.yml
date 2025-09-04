@@ -1,7 +1,7 @@
 ---
-# Load vault secrets
+# Load vault secrets from environment repo
 - name: Load vault secrets
-  ansible.builtin.include_vars: vars/vault_secrets.yml
+  ansible.builtin.include_vars: "{{ playbook_dir }}/../ansible-environment-azure-dv/vars/vault_tap_secrets.yml"
   tags:
     - always
     - vault
