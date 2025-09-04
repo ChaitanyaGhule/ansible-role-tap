@@ -1,0 +1,26 @@
+VITE_ENV={{ tap_vite_env }}
+VITE_PUBLIC_URL={{ tap_vite_public_url }}
+VITE_LOCAL_GOOGLE_KEY={{ tap_vite_local_google_key }}
+VITE_API_LOGIN_URL={{ tap_vite_api_login_url }}
+
+VITE_DEFAULT_LANG="{{ tap_markets[market].default_lang }}"
+VITE_LANGUAGES="{{ tap_markets[market].available_langs }}"
+VITE_LANGUAGES_FROM_BACKOFFICE={{ tap_vite_languages_from_backoffice }}
+
+VITE_MARKET="{{ market }}"
+VITE_GTM_ID="{{ tap_markets[market].gtm_id }}"
+VITE_VST_GTM_ID="{{ tap_markets[market].vst_gtm_id }}"
+
+VITE_URL='https://{{ tap_markets[market].backend_domain }}'
+VITE_API_URL='https://{{ tap_markets[market].backend_domain }}/api'
+VITE_STORAGE_URL='https://{{ tap_markets[market].backend_domain }}/storage'
+
+#FIREBASE
+VITE_APP_FB_API_KEY={{ vault_firebase_api_key }}
+VITE_APP_FB_AUTH_DOMAIN={{ vault_firebase_auth_domain }}
+VITE_APP_FB_PROJECT_ID={{ vault_firebase_project_id }}
+VITE_APP_FB_STORAGE_BUCKET={{ vault_firebase_storage_bucket }}
+VITE_APP_FB_MESSAGING_SENDER_ID={{ vault_firebase_messaging_sender_id }}
+VITE_APP_FB_APP_ID={{ vault_firebase_app_id }}
+VITE_APP_FB_MEASUREMENT_ID={{ vault_firebase_measurement_id }}
+VITE_APP_FB_VAPID_KEY={{ vault_firebase_vapid_key }}

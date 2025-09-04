@@ -1,7 +1,21 @@
 ---
+# Load vault secrets (MANAGER'S APPROACH)
+- name: Load vault secrets
+  ansible.builtin.include_vars: vars/vault_secrets.yml
+  tags:
+    - always
+    - vault
+
 # Deploy TAP application for each market (sequential for now)
 - name: Deploy TAP application for each market
   ansible.builtin.include_tasks: configure_optimized.yml
+  loop: "{{ tap_markets }}"
+  loop_control:
+    loop_var: market
+
+# Generate configuration files for each market (MANAGER'S APPROACH)
+- name: Generate configuration files for each market
+  ansible.builtin.include_tasks: generate_configs.yml
   loop: "{{ tap_markets }}"
   loop_control:
     loop_var: market

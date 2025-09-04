@@ -1,10 +1,22 @@
 ---
-# handlers file for nespresso_ansible_role_tap
+# handlers file for TAP deployment
 
 - name: Restart Supervisor
-  ansible.builtin.service:
-    name: supervisord
+  ansible.builtin.command: supervisorctl restart all
+  become: true
+  when: supervisor_result is defined and supervisor_result.changed and 'msg' not in supervisor_result
+  failed_when: false
+
+- name: restart apache
+  ansible.builtin.systemd:
+    name: httpd
     state: restarted
   become: true
-  register: supervisor_restart
-  failed_when: supervisor_restart.failed and supervisor_restart.msg is defined and 'not found' in supervisor_restart.msg
+  failed_when: false
+
+- name: reload apache
+  ansible.builtin.systemd:
+    name: httpd
+    state: reloaded
+  become: true
+  failed_when: false

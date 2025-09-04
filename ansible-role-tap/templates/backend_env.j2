@@ -1,0 +1,60 @@
+APP_NAME={{ tap_app_name_prefix }} {{ market | upper }}
+APP_ENV={{ tap_app_env }}
+APP_KEY={{ vault_app_key }}
+APP_URL=https://{{ tap_markets[market].backend_domain }}
+
+GLOBAL_API_URL="{{ tap_global_api_url }}"
+
+MARKET={{ market }}
+PANEL_LIFETIME={{ tap_markets[market].panel_lifetime }}
+ADMIN_LOGIN_ATTEMPTS={{ tap_markets[market].admin_login_attempts }}
+ADMIN_ACCOUNT_LOCK_TIME={{ tap_markets[market].admin_account_lock_time }}
+ADMIN_LOGIN_QUESTIONS={{ tap_markets[market].admin_login_questions }}
+ADMIN_RESET_PASSWORD_QUESTIONS={{ tap_markets[market].admin_reset_password_questions }}
+ADMIN_PASSWORD_HISTORY={{ tap_markets[market].admin_password_history }}
+ADMIN_QUESTION_HISTORY={{ tap_markets[market].admin_question_history }}
+ADMIN_DEFAULT_LANG={{ tap_markets[market].admin_default_lang }}
+ADMIN_LANGS={{ tap_markets[market].admin_langs }}
+
+REDIS_HOST={{ tap_redis_host }}
+REDIS_PASSWORD={{ vault_redis_password }}
+REDIS_PORT={{ tap_redis_port }}
+
+AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT={{ tap_azure_di_endpoint }}
+AZURE_DOCUMENT_INTELLIGENCE_KEY={{ vault_azure_di_key }}
+AZURE_DOCUMENT_INTELLIGENCE_VERSION={{ tap_azure_di_version }}
+
+GS_COMMAND={{ tap_gs_command }}
+
+LOG_CHANNEL={{ tap_log_channel }}
+LOG_LEVEL={{ tap_log_level }}
+
+DB_CONNECTION={{ tap_db_connection }}
+DB_HOST={{ tap_db_host }}
+DB_PORT={{ tap_db_port }}
+DB_DATABASE={{ tap_markets[market].db_name }}
+DB_USERNAME={{ tap_db_username }}
+DB_PASSWORD={{ vault_db_password }}
+
+BROADCAST_DRIVER={{ tap_broadcast_driver }}
+CACHE_DRIVER={{ tap_cache_driver }}
+QUEUE_CONNECTION={{ tap_queue_connection }}
+SESSION_DRIVER={{ tap_session_driver }}
+SESSION_LIFETIME={{ tap_session_lifetime }}
+
+NESTLE_ECAPI="{{ tap_nestle_ecapi_url }}"
+NESTLE_ECAPI_KEY={{ vault_nestle_ecapi_key }}
+NESTLE_ECAPI_MARKET={{ tap_markets[market].ecapi_market }}
+NESTLE_ECAPI_CHANNEL={{ tap_markets[market].ecapi_channel }}
+NESTLE_ECAPI_FRONTEND={{ tap_markets[market].ecapi_frontend }}
+
+NESTLE_NESSOFT="{{ tap_nestle_nessoft_url }}"
+NESTLE_NESSOFT_USER={{ vault_nestle_nessoft_user }}
+NESTLE_NESSOFT_PASS={{ vault_nestle_nessoft_pass }}
+NESTLE_ISSUER_URL="{{ tap_nestle_issuer_url }}"
+NESTLE_HOP_URL="{{ tap_nestle_hop_url }}"
+
+FIREBASE_CREDENTIALS={{ vault_firebase_credentials }}
+
+NCS_PAYMENT_API_KEY={{ vault_ncs_payment_api_key }}
+NCS_PAYMENT_AUTHORIZATION_KEY={{ vault_ncs_payment_authorization_key }}

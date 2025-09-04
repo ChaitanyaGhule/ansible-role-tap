@@ -1,0 +1,60 @@
+---
+# Generate configuration files using manager's approach
+# Templates contain mix of vault variables (sensitive) and default variables (non-sensitive)
+
+- name: "Generate backend .env file for {{ market }}"
+  template:
+    src: backend_env.j2
+    dest: "{{ tap_backend_path }}/.env"
+    owner: "{{ tap_file_owner }}"
+    group: "{{ tap_file_group }}"
+    mode: '0640'
+    backup: true
+  become: true
+  tags:
+    - config
+    - backend
+
+- name: "Generate frontend .env.production file for {{ market }}"
+  template:
+    src: frontend_env.j2
+    dest: "{{ tap_frontend_path }}/.env.production"
+    owner: "{{ tap_file_owner }}"
+    group: "{{ tap_file_group }}"
+    mode: '0640'
+    backup: true
+  become: true
+  tags:
+    - config
+    - frontend
+
+- name: "Generate Apache virtual host configuration for {{ market }}"
+  template:
+    src: apache_vhost.j2
+    dest: "/etc/httpd/conf.d/market_{{ market }}.conf"
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+  become: true
+  notify: restart apache
+  tags:
+    - config
+    - apache
+
+- name: "Verify configuration files created for {{ market }}"
+  stat:
+    path: "{{ item }}"
+  register: config_files_check
+  loop:
+    - "{{ tap_backend_path }}/.env"
+    - "{{ tap_frontend_path }}/.env.production"
+    - "/etc/httpd/conf.d/market_{{ market }}.conf"
+
+- name: "Show configuration files status for {{ market }}"
+  debug:
+    msg: |
+      Configuration files for {{ market }}:
+      {% for result in config_files_check.results %}
+      - {{ result.item }}: {{ 'EXISTS' if result.stat.exists else 'MISSING' }}
+      {% endfor %}

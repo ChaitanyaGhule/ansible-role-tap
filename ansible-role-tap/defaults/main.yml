@@ -106,3 +106,417 @@ tap_composer_force_update: true  # Enable for initial deployment to create compo
 tap_composer_apcu_autoloader: true
 tap_require_composer_lock: false  # SAFETY: Disabled for initial deployment without composer.lock
 tap_backup_vendor: true  # Backup vendor directory before changes
+
+# Database Configuration (references vault variables)
+tap_db_host: "{{ vault_db_host }}"
+tap_db_port: "{{ vault_db_port }}"
+tap_db_name: "{{ vault_db_name }}"
+tap_db_username: "{{ vault_db_username }}"
+tap_db_password: "{{ vault_db_password }}"
+
+# Redis Configuration (references vault variables)
+tap_redis_host: "{{ vault_redis_host }}"
+tap_redis_port: "{{ vault_redis_port }}"
+tap_redis_password: "{{ vault_redis_password }}"
+
+# Application Configuration (Non-Sensitive)
+tap_app_name_prefix: "TAP PRD"
+tap_app_env: "prod"
+tap_global_api_url: "https://api.nespresso-ev.com/api/"
+
+# Database Configuration (Non-Sensitive)
+tap_db_connection: "mysql"
+tap_db_host: "your-database-host"
+tap_db_port: 3306
+tap_db_username: "tap_production_user"
+
+# Redis Configuration (Non-Sensitive)
+tap_redis_host: "your-redis-host"
+tap_redis_port: 6379
+
+# Azure Configuration (Non-Sensitive)
+tap_azure_di_endpoint: "https://westeurope.cognitiveservices.azure.com/"
+tap_azure_di_version: "2023-07-31"
+
+# Nestlé API Configuration (Non-Sensitive)
+tap_nestle_ecapi_url: "https://www.nespresso.com"
+tap_nestle_nessoft_url: "https://api.nespresso.com/erp/"
+tap_nestle_issuer_url: "https://nc2.nespresso.com/ecapi"
+tap_nestle_hop_url: "https://payment.nespresso.com"
+
+# Laravel Configuration (Non-Sensitive)
+tap_gs_command: "gs"
+tap_log_channel: "stack"
+tap_log_level: "debug"
+tap_broadcast_driver: "log"
+tap_cache_driver: "file"
+tap_queue_connection: "redis"
+tap_session_driver: "file"
+tap_session_lifetime: 120
+
+# Frontend Configuration (Non-Sensitive)
+tap_vite_env: "prod"
+tap_vite_public_url: ""
+tap_vite_local_google_key: ""
+tap_vite_api_login_url: ""
+tap_vite_languages_from_backoffice: false
+
+# Apache Configuration (Non-Sensitive)
+tap_apache_port: 80
+tap_apache_rewrite_engine: "on"
+tap_apache_redirect_type: "permanent"
+
+# Market-Specific Configuration (Non-Sensitive)
+tap_markets:
+  fr:
+    backend_domain: "fr-pr-bo.v2.nespresso-ev.com"
+    frontend_domain: "offres.nespresso.fr"
+    frontend_domain_www: "www.offres.nespresso.fr"
+    db_name: "tap_production_fr"
+    default_lang: "fr"
+    available_langs: "en fr"
+    admin_default_lang: "en"
+    admin_langs: "en"
+    gtm_id: "GTM-KKMTSHB"
+    vst_gtm_id: "GTM-NKJD5ZS"
+    ecapi_market: "fr"
+    ecapi_channel: "b2b"
+    ecapi_frontend: "TAP"
+    panel_lifetime: 99999
+    admin_login_attempts: 5
+    admin_account_lock_time: 60
+    admin_login_questions: 2
+    admin_reset_password_questions: 1
+    admin_password_history: 5
+    admin_question_history: 5
+  
+  pl:
+    backend_domain: "pl-pr-bo.v2.nespresso-ev.com"
+    frontend_domain: "offres.nespresso.pl"
+    frontend_domain_www: "www.offres.nespresso.pl"
+    db_name: "tap_production_pl"
+    default_lang: "pl"
+    available_langs: "en pl"
+    admin_default_lang: "en"
+    admin_langs: "en"
+    gtm_id: "GTM-XXXXXXX"
+    vst_gtm_id: "GTM-XXXXXXX"
+    ecapi_market: "pl"
+    ecapi_channel: "b2b"
+    ecapi_frontend: "TAP"
+    panel_lifetime: 99999
+    admin_login_attempts: 5
+    admin_account_lock_time: 60
+    admin_login_questions: 2
+    admin_reset_password_questions: 1
+    admin_password_history: 5
+    admin_question_history: 5
+
+  # Complete all 16 markets
+  gr:
+    backend_domain: "gr-pr-bo.v2.nespresso-ev.com"
+    frontend_domain: "offres.nespresso.gr"
+    frontend_domain_www: "www.offres.nespresso.gr"
+    db_name: "tap_production_gr"
+    default_lang: "gr"
+    available_langs: "en gr"
+    admin_default_lang: "en"
+    admin_langs: "en"
+    gtm_id: "GTM-XXXXXXX"
+    vst_gtm_id: "GTM-XXXXXXX"
+    ecapi_market: "gr"
+    ecapi_channel: "b2b"
+    ecapi_frontend: "TAP"
+    panel_lifetime: 99999
+    admin_login_attempts: 5
+    admin_account_lock_time: 60
+    admin_login_questions: 2
+    admin_reset_password_questions: 1
+    admin_password_history: 5
+    admin_question_history: 5
+
+  at:
+    backend_domain: "at-pr-bo.v2.nespresso-ev.com"
+    frontend_domain: "offres.nespresso.at"
+    frontend_domain_www: "www.offres.nespresso.at"
+    db_name: "tap_production_at"
+    default_lang: "de"
+    available_langs: "en de"
+    admin_default_lang: "en"
+    admin_langs: "en"
+    gtm_id: "GTM-XXXXXXX"
+    vst_gtm_id: "GTM-XXXXXXX"
+    ecapi_market: "at"
+    ecapi_channel: "b2b"
+    ecapi_frontend: "TAP"
+    panel_lifetime: 99999
+    admin_login_attempts: 5
+    admin_account_lock_time: 60
+    admin_login_questions: 2
+    admin_reset_password_questions: 1
+    admin_password_history: 5
+    admin_question_history: 5
+
+  cz:
+    backend_domain: "cz-pr-bo.v2.nespresso-ev.com"
+    frontend_domain: "offres.nespresso.cz"
+    frontend_domain_www: "www.offres.nespresso.cz"
+    db_name: "tap_production_cz"
+    default_lang: "cs"
+    available_langs: "en cs"
+    admin_default_lang: "en"
+    admin_langs: "en"
+    gtm_id: "GTM-XXXXXXX"
+    vst_gtm_id: "GTM-XXXXXXX"
+    ecapi_market: "cz"
+    ecapi_channel: "b2b"
+    ecapi_frontend: "TAP"
+    panel_lifetime: 99999
+    admin_login_attempts: 5
+    admin_account_lock_time: 60
+    admin_login_questions: 2
+    admin_reset_password_questions: 1
+    admin_password_history: 5
+    admin_question_history: 5
+
+  pt:
+    backend_domain: "pt-pr-bo.v2.nespresso-ev.com"
+    frontend_domain: "offres.nespresso.pt"
+    frontend_domain_www: "www.offres.nespresso.pt"
+    db_name: "tap_production_pt"
+    default_lang: "pt"
+    available_langs: "en pt"
+    admin_default_lang: "en"
+    admin_langs: "en"
+    gtm_id: "GTM-XXXXXXX"
+    vst_gtm_id: "GTM-XXXXXXX"
+    ecapi_market: "pt"
+    ecapi_channel: "b2b"
+    ecapi_frontend: "TAP"
+    panel_lifetime: 99999
+    admin_login_attempts: 5
+    admin_account_lock_time: 60
+    admin_login_questions: 2
+    admin_reset_password_questions: 1
+    admin_password_history: 5
+    admin_question_history: 5
+
+  be:
+    backend_domain: "be-pr-bo.v2.nespresso-ev.com"
+    frontend_domain: "offres.nespresso.be"
+    frontend_domain_www: "www.offres.nespresso.be"
+    db_name: "tap_production_be"
+    default_lang: "fr"
+    available_langs: "en fr nl"
+    admin_default_lang: "en"
+    admin_langs: "en"
+    gtm_id: "GTM-XXXXXXX"
+    vst_gtm_id: "GTM-XXXXXXX"
+    ecapi_market: "be"
+    ecapi_channel: "b2b"
+    ecapi_frontend: "TAP"
+    panel_lifetime: 99999
+    admin_login_attempts: 5
+    admin_account_lock_time: 60
+    admin_login_questions: 2
+    admin_reset_password_questions: 1
+    admin_password_history: 5
+    admin_question_history: 5
+
+  es:
+    backend_domain: "es-pr-bo.v2.nespresso-ev.com"
+    frontend_domain: "offres.nespresso.es"
+    frontend_domain_www: "www.offres.nespresso.es"
+    db_name: "tap_production_es"
+    default_lang: "es"
+    available_langs: "en es"
+    admin_default_lang: "en"
+    admin_langs: "en"
+    gtm_id: "GTM-XXXXXXX"
+    vst_gtm_id: "GTM-XXXXXXX"
+    ecapi_market: "es"
+    ecapi_channel: "b2b"
+    ecapi_frontend: "TAP"
+    panel_lifetime: 99999
+    admin_login_attempts: 5
+    admin_account_lock_time: 60
+    admin_login_questions: 2
+    admin_reset_password_questions: 1
+    admin_password_history: 5
+    admin_question_history: 5
+
+  it:
+    backend_domain: "it-pr-bo.v2.nespresso-ev.com"
+    frontend_domain: "offres.nespresso.it"
+    frontend_domain_www: "www.offres.nespresso.it"
+    db_name: "tap_production_it"
+    default_lang: "it"
+    available_langs: "en it"
+    admin_default_lang: "en"
+    admin_langs: "en"
+    gtm_id: "GTM-XXXXXXX"
+    vst_gtm_id: "GTM-XXXXXXX"
+    ecapi_market: "it"
+    ecapi_channel: "b2b"
+    ecapi_frontend: "TAP"
+    panel_lifetime: 99999
+    admin_login_attempts: 5
+    admin_account_lock_time: 60
+    admin_login_questions: 2
+    admin_reset_password_questions: 1
+    admin_password_history: 5
+    admin_question_history: 5
+
+  ch:
+    backend_domain: "ch-pr-bo.v2.nespresso-ev.com"
+    frontend_domain: "offres.nespresso.ch"
+    frontend_domain_www: "www.offres.nespresso.ch"
+    db_name: "tap_production_ch"
+    default_lang: "de"
+    available_langs: "en de fr it"
+    admin_default_lang: "en"
+    admin_langs: "en"
+    gtm_id: "GTM-XXXXXXX"
+    vst_gtm_id: "GTM-XXXXXXX"
+    ecapi_market: "ch"
+    ecapi_channel: "b2b"
+    ecapi_frontend: "TAP"
+    panel_lifetime: 99999
+    admin_login_attempts: 5
+    admin_account_lock_time: 60
+    admin_login_questions: 2
+    admin_reset_password_questions: 1
+    admin_password_history: 5
+    admin_question_history: 5
+
+  ro:
+    backend_domain: "ro-pr-bo.v2.nespresso-ev.com"
+    frontend_domain: "offres.nespresso.ro"
+    frontend_domain_www: "www.offres.nespresso.ro"
+    db_name: "tap_production_ro"
+    default_lang: "ro"
+    available_langs: "en ro"
+    admin_default_lang: "en"
+    admin_langs: "en"
+    gtm_id: "GTM-XXXXXXX"
+    vst_gtm_id: "GTM-XXXXXXX"
+    ecapi_market: "ro"
+    ecapi_channel: "b2b"
+    ecapi_frontend: "TAP"
+    panel_lifetime: 99999
+    admin_login_attempts: 5
+    admin_account_lock_time: 60
+    admin_login_questions: 2
+    admin_reset_password_questions: 1
+    admin_password_history: 5
+    admin_question_history: 5
+
+  il:
+    backend_domain: "il-pr-bo.v2.nespresso-ev.com"
+    frontend_domain: "offres.nespresso.il"
+    frontend_domain_www: "www.offres.nespresso.il"
+    db_name: "tap_production_il"
+    default_lang: "he"
+    available_langs: "en he"
+    admin_default_lang: "en"
+    admin_langs: "en"
+    gtm_id: "GTM-XXXXXXX"
+    vst_gtm_id: "GTM-XXXXXXX"
+    ecapi_market: "il"
+    ecapi_channel: "b2b"
+    ecapi_frontend: "TAP"
+    panel_lifetime: 99999
+    admin_login_attempts: 5
+    admin_account_lock_time: 60
+    admin_login_questions: 2
+    admin_reset_password_questions: 1
+    admin_password_history: 5
+    admin_question_history: 5
+
+  nord:
+    backend_domain: "nord-pr-bo.v2.nespresso-ev.com"
+    frontend_domain: "offres.nespresso.nord"
+    frontend_domain_www: "www.offres.nespresso.nord"
+    db_name: "tap_production_nord"
+    default_lang: "en"
+    available_langs: "en sv no da fi"
+    admin_default_lang: "en"
+    admin_langs: "en"
+    gtm_id: "GTM-XXXXXXX"
+    vst_gtm_id: "GTM-XXXXXXX"
+    ecapi_market: "nord"
+    ecapi_channel: "b2b"
+    ecapi_frontend: "TAP"
+    panel_lifetime: 99999
+    admin_login_attempts: 5
+    admin_account_lock_time: 60
+    admin_login_questions: 2
+    admin_reset_password_questions: 1
+    admin_password_history: 5
+    admin_question_history: 5
+
+  uk:
+    backend_domain: "uk-pr-bo.v2.nespresso-ev.com"
+    frontend_domain: "offres.nespresso.uk"
+    frontend_domain_www: "www.offres.nespresso.uk"
+    db_name: "tap_production_uk"
+    default_lang: "en"
+    available_langs: "en"
+    admin_default_lang: "en"
+    admin_langs: "en"
+    gtm_id: "GTM-XXXXXXX"
+    vst_gtm_id: "GTM-XXXXXXX"
+    ecapi_market: "uk"
+    ecapi_channel: "b2b"
+    ecapi_frontend: "TAP"
+    panel_lifetime: 99999
+    admin_login_attempts: 5
+    admin_account_lock_time: 60
+    admin_login_questions: 2
+    admin_reset_password_questions: 1
+    admin_password_history: 5
+    admin_question_history: 5
+
+  nl:
+    backend_domain: "nl-pr-bo.v2.nespresso-ev.com"
+    frontend_domain: "offres.nespresso.nl"
+    frontend_domain_www: "www.offres.nespresso.nl"
+    db_name: "tap_production_nl"
+    default_lang: "nl"
+    available_langs: "en nl"
+    admin_default_lang: "en"
+    admin_langs: "en"
+    gtm_id: "GTM-XXXXXXX"
+    vst_gtm_id: "GTM-XXXXXXX"
+    ecapi_market: "nl"
+    ecapi_channel: "b2b"
+    ecapi_frontend: "TAP"
+    panel_lifetime: 99999
+    admin_login_attempts: 5
+    admin_account_lock_time: 60
+    admin_login_questions: 2
+    admin_reset_password_questions: 1
+    admin_password_history: 5
+    admin_question_history: 5
+
+  tr:
+    backend_domain: "tr-pr-bo.v2.nespresso-ev.com"
+    frontend_domain: "offres.nespresso.tr"
+    frontend_domain_www: "www.offres.nespresso.tr"
+    db_name: "tap_production_tr"
+    default_lang: "tr"
+    available_langs: "en tr"
+    admin_default_lang: "en"
+    admin_langs: "en"
+    gtm_id: "GTM-XXXXXXX"
+    vst_gtm_id: "GTM-XXXXXXX"
+    ecapi_market: "tr"
+    ecapi_channel: "b2b"
+    ecapi_frontend: "TAP"
+    panel_lifetime: 99999
+    admin_login_attempts: 5
+    admin_account_lock_time: 60
+    admin_login_questions: 2
+    admin_reset_password_questions: 1
+    admin_password_history: 5
+    admin_question_history: 5

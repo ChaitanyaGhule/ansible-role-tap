@@ -1,0 +1,25 @@
+# Ansible Vault and Security Files
+*_plain.yml
+*_plain.yaml
+.vault_pass
+vault_password.txt
+
+# Temporary Files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# IDE Files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Backup Files
+*.bak
+*.backup
