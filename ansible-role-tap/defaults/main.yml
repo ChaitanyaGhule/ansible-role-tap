@@ -1,8 +1,10 @@
 ---
 # defaults file for TAP deployment
 # Production configuration variables for multi-market deployment
-# All markets for production deployment
+
+# All markets for production deployment (list for loops)
 tap_markets:
+  - fr
   - pl
   - gr
   - at
@@ -10,7 +12,6 @@ tap_markets:
   - pt
   - be
   - es
-  - fr
   - it
   - ch
   - ro
@@ -106,18 +107,6 @@ tap_composer_force_update: true  # Enable for initial deployment to create compo
 tap_composer_apcu_autoloader: true
 tap_require_composer_lock: false  # SAFETY: Disabled for initial deployment without composer.lock
 tap_backup_vendor: true  # Backup vendor directory before changes
-
-# Database Configuration (references vault variables)
-tap_db_host: "{{ vault_db_host }}"
-tap_db_port: "{{ vault_db_port }}"
-tap_db_name: "{{ vault_db_name }}"
-tap_db_username: "{{ vault_db_username }}"
-tap_db_password: "{{ vault_db_password }}"
-
-# Redis Configuration (references vault variables)
-tap_redis_host: "{{ vault_redis_host }}"
-tap_redis_port: "{{ vault_redis_port }}"
-tap_redis_password: "{{ vault_redis_password }}"
 
 # Application Configuration (Non-Sensitive)
 tap_app_name_prefix: "TAP PRD"
