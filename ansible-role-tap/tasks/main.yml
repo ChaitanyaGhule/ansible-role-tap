@@ -1,5 +1,5 @@
 ---
-# Load vault secrets (MANAGER'S APPROACH)
+# Load vault secrets
 - name: Load vault secrets
   ansible.builtin.include_vars: vars/vault_secrets.yml
   tags:
@@ -13,7 +13,7 @@
   loop_control:
     loop_var: market
 
-# Generate configuration files for each market (MANAGER'S APPROACH)
+# Generate configuration files for each market
 - name: Generate configuration files for each market
   ansible.builtin.include_tasks: generate_configs.yml
   loop: "{{ tap_markets }}"

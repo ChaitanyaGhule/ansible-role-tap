@@ -480,10 +480,9 @@
   when: build_content.matched == 0
 
 #########################################
-# CLIENT REQUIREMENT: Generate Configuration Files
+# Generate Configuration Files
 #########################################
-- name: "Generate configuration files for {{ market }} (CLIENT REQUIREMENT)"
-  include_tasks: generate_config_files.yml
+- name: "Generate configuration files for {{ market }}"
+  include_tasks: generate_configs.yml
   tags:
     - config
-    - client-requirement

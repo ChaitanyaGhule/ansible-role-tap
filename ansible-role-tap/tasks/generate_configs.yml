@@ -1,5 +1,5 @@
 ---
-# Generate configuration files using manager's approach
+# Generate configuration files for TAP deployment
 # Templates contain mix of vault variables (sensitive) and default variables (non-sensitive)
 
 - name: "Generate backend .env file for {{ market }}"
