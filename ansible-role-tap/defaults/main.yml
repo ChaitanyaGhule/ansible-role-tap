@@ -3,7 +3,7 @@
 # Production configuration variables for multi-market deployment
 
 # All markets for production deployment (list for loops)
-tap_markets:
+tap_markets_list:
   - fr
   - pl
   - gr

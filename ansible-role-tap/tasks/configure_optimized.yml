@@ -483,6 +483,6 @@
 # Generate Configuration Files
 #########################################
 - name: "Generate configuration files for {{ market }}"
-  include_tasks: generate_configs.yml
+  ansible.builtin.include_tasks: generate_configs.yml
   tags:
     - config

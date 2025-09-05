@@ -9,19 +9,19 @@
 # Deploy TAP application for each market (sequential for now)
 - name: Deploy TAP application for each market
   ansible.builtin.include_tasks: configure_optimized.yml
-  loop: "{{ tap_markets }}"
+  loop: "{{ tap_markets_list }}"
   loop_control:
     loop_var: market
 
 # Generate configuration files for each market
 - name: Generate configuration files for each market
   ansible.builtin.include_tasks: generate_configs.yml
-  loop: "{{ tap_markets }}"
+  loop: "{{ tap_markets_list }}"
   loop_control:
     loop_var: market
 
 - name: Post-deployment verification for each market
   ansible.builtin.include_tasks: post_deployment_verification.yml
-  loop: "{{ tap_markets }}"
+  loop: "{{ tap_markets_list }}"
   loop_control:
     loop_var: market

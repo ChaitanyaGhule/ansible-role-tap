@@ -6,6 +6,7 @@
   become: true
   when: supervisor_result is defined and supervisor_result.changed and 'msg' not in supervisor_result
   failed_when: false
+  changed_when: true
 
 - name: restart apache
   ansible.builtin.systemd:

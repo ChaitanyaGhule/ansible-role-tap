@@ -3,7 +3,7 @@
 # Templates contain mix of vault variables (sensitive) and default variables (non-sensitive)
 
 - name: "Generate backend .env file for {{ market }}"
-  template:
+  ansible.builtin.template:
     src: backend_env.j2
     dest: "{{ tap_backend_path }}/.env"
     owner: "{{ tap_file_owner }}"
@@ -16,7 +16,7 @@
     - backend
 
 - name: "Generate frontend .env.production file for {{ market }}"
-  template:
+  ansible.builtin.template:
     src: frontend_env.j2
     dest: "{{ tap_frontend_path }}/.env.production"
     owner: "{{ tap_file_owner }}"
@@ -29,7 +29,7 @@
     - frontend
 
 - name: "Generate Apache virtual host configuration for {{ market }}"
-  template:
+  ansible.builtin.template:
     src: apache_vhost.j2
     dest: "/etc/httpd/conf.d/market_{{ market }}.conf"
     owner: root
@@ -43,7 +43,7 @@
     - apache
 
 - name: "Verify configuration files created for {{ market }}"
-  stat:
+  ansible.builtin.stat:
     path: "{{ item }}"
   register: config_files_check
   loop:
@@ -52,7 +52,7 @@
     - "/etc/httpd/conf.d/market_{{ market }}.conf"
 
 - name: "Show configuration files status for {{ market }}"
-  debug:
+  ansible.builtin.debug:
     msg: |
       Configuration files for {{ market }}:
       {% for result in config_files_check.results %}
